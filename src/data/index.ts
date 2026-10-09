@@ -24,7 +24,8 @@ export async function loadWeather(_place: Place, _opts: LoadOptions = {}): Promi
  * foreground with data older than 5 minutes.
  */
 export function useWeather(_place: Place | null, _opts: { airNowKey?: string } = {}): WeatherState {
-  throw new Error('useWeather: not implemented yet');
+  // Stub: behaves as "no place selected" until the data layer lands.
+  return { bundle: null, status: 'idle', refreshing: false, error: null, fromCache: false, refresh: () => {} };
 }
 
 /** Search US places by city name or ZIP code. */
