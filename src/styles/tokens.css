@@ -1,0 +1,244 @@
+/*
+ * Design tokens. Light and dark are two designed sets, not an inversion of each other.
+ *
+ * Theme selection: src/state/theme.ts always stamps <html data-theme="light|dark"> with the *resolved*
+ * theme (the radar view reads it too). The @media block below only covers the first paint, before
+ * that script has run, and a stamped "light" beats an OS-dark preference (hence the :not guard).
+ */
+
+:root {
+  /* Type */
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Shape & spacing */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+  --gap: 12px;
+  --pad: 16px;
+  --tap: 44px; /* minimum touch target */
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 220ms;
+
+  /* Safe-area insets (viewport-fit=cover) */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* Alert severity (same in both themes; always paired with a text label and an icon) */
+  --sev-extreme-bg: #a4121a;
+  --sev-extreme-ink: #ffffff;
+  --sev-severe-bg: #c9302c;
+  --sev-severe-ink: #ffffff;
+  --sev-moderate-bg: #f08a1c;
+  --sev-moderate-ink: #2a1500;
+  --sev-minor-bg: #f2d229;
+  --sev-minor-ink: #2b2500;
+  --sev-unknown-bg: #5f6e84;
+  --sev-unknown-ink: #ffffff;
+
+  /* Dark glyph marks drawn on the (always light) cloud fill, e.g. the "?" of the unknown-conditions icon */
+  --wx-mark: #4b5b73;
+}
+
+/* ---------------------------------------------------------------- light */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #eef2f8;
+  --surface: #ffffff;
+  --surface-2: #f3f6fb;
+  --surface-3: #e4eaf3;
+  --ink: #0e1a2b;
+  --ink-2: #44546a;
+  --ink-3: #5c6b82;
+  --line: rgba(14, 26, 43, 0.09);
+  --line-strong: rgba(14, 26, 43, 0.2);
+  --accent: #1565c0;
+  --accent-hover: #0f52a0;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(21, 101, 192, 0.1);
+  --danger: #b3261e;
+  --ok: #1b6b2f;
+  --focus: #1565c0;
+  --shadow: 0 1px 2px rgba(14, 26, 43, 0.06), 0 8px 24px rgba(14, 26, 43, 0.06);
+  --scrim: rgba(8, 14, 26, 0.5);
+  --track: #e4eaf3;
+  --seg-track: #e4eaf3;
+  --seg-selected: #ffffff;
+
+  /* Chart (dataviz palette slots 1 and 2, validated on #ffffff) */
+  --viz-1: #2a78d6; /* temperature */
+  --viz-2: #eb6834; /* feels like */
+  --viz-precip: #3987e5; /* sequential blue, step 400 */
+  --viz-grid: rgba(14, 26, 43, 0.08);
+  --viz-axis: rgba(14, 26, 43, 0.22);
+  --viz-select: rgba(21, 101, 192, 0.1);
+
+  /* Weather icon palette on a card surface */
+  --wx-sun: #f6a21d;
+  --wx-sun-hi: #ffd35e;
+  --wx-sun-edge: #d9820b;
+  --wx-moon: #fbf0b8;
+  --wx-moon-edge: #c9a63a;
+  --wx-cloud: #eaf0f8;
+  --wx-cloud-edge: #8a9db9;
+  --wx-cloud-shade: #c6d3e4;
+  --wx-storm: #9aa8bd;
+  --wx-storm-edge: #5c6b82;
+  --wx-rain: #2f86ea;
+  --wx-snow: #5aa6ee;
+  --wx-ice: #2a9fb0;
+  --wx-bolt: #ffbc00;
+  --wx-bolt-edge: #c98600;
+  --wx-fog: #9aaac1;
+  --wx-wind: #7a8fae;
+  --wx-smoke: #a0948a;
+  --wx-dust: #d3a554;
+  --wx-hot: #ef5a3c;
+  --wx-cold: #3f86ea;
+}
+
+/* ---------------------------------------------------------------- dark */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0f172a;
+  --surface: #172136;
+  --surface-2: #1d2a43;
+  --surface-3: #283858;
+  --ink: #eef3fb;
+  --ink-2: #b9c5d8;
+  --ink-3: #93a1b8;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --accent: #7db4ff;
+  --accent-hover: #a3c9ff;
+  --accent-ink: #08162b;
+  --accent-soft: rgba(125, 180, 255, 0.14);
+  --danger: #ff8a80;
+  --ok: #7ddc9a;
+  --focus: #9cc6ff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
+  --scrim: rgba(2, 6, 14, 0.66);
+  --track: #283858;
+  --seg-track: #111b30;
+  --seg-selected: #34476e;
+
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-precip: #3987e5;
+  --viz-grid: rgba(255, 255, 255, 0.07);
+  --viz-axis: rgba(255, 255, 255, 0.22);
+  --viz-select: rgba(125, 180, 255, 0.14);
+
+  --wx-sun: #ffb43a;
+  --wx-sun-hi: #ffd870;
+  --wx-sun-edge: #ffcf6b;
+  --wx-moon: #f7eaa8;
+  --wx-moon-edge: #f7eaa8;
+  --wx-cloud: #c9d4e5;
+  --wx-cloud-edge: #eaf0f9;
+  --wx-cloud-shade: #8b9bb5;
+  --wx-storm: #7d8ca6;
+  --wx-storm-edge: #b4c1d5;
+  --wx-rain: #5aa2f5;
+  --wx-snow: #cfe6ff;
+  --wx-ice: #6fd3e0;
+  --wx-bolt: #ffd23d;
+  --wx-bolt-edge: #ffe58a;
+  --wx-fog: #8e9fb8;
+  --wx-wind: #9fb2d0;
+  --wx-smoke: #b3a79d;
+  --wx-dust: #e0b765;
+  --wx-hot: #ff7a5c;
+  --wx-cold: #6fa8ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not([data-theme='dark']) {
+    color-scheme: dark;
+
+    --bg: #0f172a;
+    --surface: #172136;
+    --surface-2: #1d2a43;
+    --surface-3: #283858;
+    --ink: #eef3fb;
+    --ink-2: #b9c5d8;
+    --ink-3: #93a1b8;
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.2);
+    --accent: #7db4ff;
+    --accent-hover: #a3c9ff;
+    --accent-ink: #08162b;
+    --accent-soft: rgba(125, 180, 255, 0.14);
+    --danger: #ff8a80;
+    --ok: #7ddc9a;
+    --focus: #9cc6ff;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.35);
+    --scrim: rgba(2, 6, 14, 0.66);
+    --track: #283858;
+  --seg-track: #111b30;
+  --seg-selected: #34476e;
+
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-precip: #3987e5;
+    --viz-grid: rgba(255, 255, 255, 0.07);
+    --viz-axis: rgba(255, 255, 255, 0.22);
+    --viz-select: rgba(125, 180, 255, 0.14);
+
+    --wx-sun: #ffb43a;
+    --wx-sun-hi: #ffd870;
+    --wx-sun-edge: #ffcf6b;
+    --wx-moon: #f7eaa8;
+    --wx-moon-edge: #f7eaa8;
+    --wx-cloud: #c9d4e5;
+    --wx-cloud-edge: #eaf0f9;
+    --wx-cloud-shade: #8b9bb5;
+    --wx-storm: #7d8ca6;
+    --wx-storm-edge: #b4c1d5;
+    --wx-rain: #5aa2f5;
+    --wx-snow: #cfe6ff;
+    --wx-ice: #6fd3e0;
+    --wx-bolt: #ffd23d;
+    --wx-bolt-edge: #ffe58a;
+    --wx-fog: #8e9fb8;
+    --wx-wind: #9fb2d0;
+    --wx-smoke: #b3a79d;
+    --wx-dust: #e0b765;
+    --wx-hot: #ff7a5c;
+    --wx-cold: #6fa8ff;
+  }
+}
+
+/* Icons drawn on the hero's sky gradient use a white-cloud palette in either theme. */
+.on-sky {
+  --wx-sun: #ffc23d;
+  --wx-sun-hi: #ffe27a;
+  --wx-sun-edge: #ffe9a3;
+  --wx-moon: #fff6c9;
+  --wx-moon-edge: #fff6c9;
+  --wx-cloud: #ffffff;
+  --wx-cloud-edge: #ffffff;
+  --wx-cloud-shade: #d4e0f1;
+  --wx-storm: #cdd7e6;
+  --wx-storm-edge: #e9eef7;
+  --wx-rain: #8ec5ff;
+  --wx-snow: #ffffff;
+  --wx-ice: #b6f0f7;
+  --wx-bolt: #ffd84a;
+  --wx-bolt-edge: #fff0a8;
+  --wx-fog: #e3ebf7;
+  --wx-wind: #e3ebf7;
+  --wx-smoke: #d8cfc8;
+  --wx-dust: #f1d493;
+  --wx-hot: #ffd0c2;
+  --wx-cold: #d6e8ff;
+}
