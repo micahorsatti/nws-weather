@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Excerpt of a real WMS 1.3.0 GetCapabilities response from
+     https://opengeo.ncep.noaa.gov/geoserver/conus/conus_bref_qcd/ows?service=WMS&version=1.3.0&request=GetCapabilities
+     captured 2026-10-09T02:29Z. <Service>, <Request> and <Exception> sections removed; the time list is unmodified. -->
+<WMS_Capabilities version="1.3.0" updateSequence="18587" xmlns="http://www.opengis.net/wms" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.opengis.net/wms https://opengeo.ncep.noaa.gov/geoserver/schemas/wms/1.3.0/capabilities_1_3_0.xsd">
+  <Capability>
+    <Layer>
+      <Title/>
+      <Abstract/>
+      <!--Limited list of EPSG projections:-->
+      <CRS>EPSG:3857</CRS>
+      <CRS>EPSG:4326</CRS>
+      <CRS>EPSG:4269</CRS>
+      <CRS>CRS:84</CRS>
+      <EX_GeographicBoundingBox>
+        <westBoundLongitude>-130.0</westBoundLongitude>
+        <eastBoundLongitude>-60.0000015646219</eastBoundLongitude>
+        <southBoundLatitude>20.000000782311</southBoundLatitude>
+        <northBoundLatitude>55.0</northBoundLatitude>
+      </EX_GeographicBoundingBox>
+      <BoundingBox CRS="CRS:84" minx="-130.0" miny="20.000000782311" maxx="-60.0000015646219" maxy="55.0"/>
+      <Layer queryable="1" opaque="0">
+        <Name>conus_bref_qcd</Name>
+        <Title>conus_bref_qcd</Title>
+        <Abstract>Quality Controlled 1km x 1km CONUS Radar Base Reflectivity. This data is provided Multi-Radar-Multi-Sensor (MRMS) algorithm.</Abstract>
+        <KeywordList>
+          <Keyword>conus_bref_qcd</Keyword>
+          <Keyword>WCS</Keyword>
+          <Keyword>ImageMosaic</Keyword>
+        </KeywordList>
+        <CRS>EPSG:4326</CRS>
+        <CRS>CRS:84</CRS>
+        <EX_GeographicBoundingBox>
+          <westBoundLongitude>-130.0</westBoundLongitude>
+          <eastBoundLongitude>-60.0000015646219</eastBoundLongitude>
+          <southBoundLatitude>20.000000782311</southBoundLatitude>
+          <northBoundLatitude>55.0</northBoundLatitude>
+        </EX_GeographicBoundingBox>
+        <BoundingBox CRS="CRS:84" minx="-130.0" miny="20.000000782311" maxx="-60.0000015646219" maxy="55.0"/>
+        <BoundingBox CRS="EPSG:4326" minx="20.000000782311" miny="-130.0" maxx="55.0" maxy="-60.0000015646219"/>
+        <Dimension name="time" default="2026-10-09T02:28:09Z" units="ISO8601" nearestValue="1">2026-10-09T00:30:05.000Z,2026-10-09T00:32:12.000Z,2026-10-09T00:34:14.000Z,2026-10-09T00:35:49.000Z,2026-10-09T00:38:09.000Z,2026-10-09T00:40:02.000Z,2026-10-09T00:41:56.000Z,2026-10-09T00:44:06.000Z,2026-10-09T00:46:00.000Z,2026-10-09T00:48:09.000Z,2026-10-09T00:49:57.000Z,2026-10-09T00:52:14.000Z,2026-10-09T00:54:13.000Z,2026-10-09T00:55:44.000Z,2026-10-09T00:57:54.000Z,2026-10-09T01:00:04.000Z,2026-10-09T01:02:03.000Z,2026-10-09T01:04:00.000Z,2026-10-09T01:06:05.000Z,2026-10-09T01:07:53.000Z,2026-10-09T01:10:03.000Z,2026-10-09T01:11:57.000Z,2026-10-09T01:14:03.000Z,2026-10-09T01:16:04.000Z,2026-10-09T01:17:58.000Z,2026-10-09T01:19:45.000Z,2026-10-09T01:22:13.000Z,2026-10-09T01:23:44.000Z,2026-10-09T01:25:57.000Z,2026-10-09T01:28:16.000Z,2026-10-09T01:29:55.000Z,2026-10-09T01:32:08.000Z,2026-10-09T01:34:02.000Z,2026-10-09T01:36:13.000Z,2026-10-09T01:38:10.000Z,2026-10-09T01:40:02.000Z,2026-10-09T01:41:55.000Z,2026-10-09T01:43:53.000Z,2026-10-09T01:46:12.000Z,2026-10-09T01:48:13.000Z,2026-10-09T01:50:02.000Z,2026-10-09T01:52:02.000Z,2026-10-09T01:54:05.000Z,2026-10-09T01:56:13.000Z,2026-10-09T01:58:08.000Z,2026-10-09T02:00:01.000Z,2026-10-09T02:02:10.000Z,2026-10-09T02:04:04.000Z,2026-10-09T02:06:14.000Z,2026-10-09T02:08:08.000Z,2026-10-09T02:10:09.000Z,2026-10-09T02:12:12.000Z,2026-10-09T02:14:10.000Z,2026-10-09T02:16:16.000Z,2026-10-09T02:17:55.000Z,2026-10-09T02:20:13.000Z,2026-10-09T02:21:50.000Z,2026-10-09T02:24:07.000Z,2026-10-09T02:25:44.000Z,2026-10-09T02:28:09.000Z</Dimension>
+        </Layer>
+    </Layer>
+  </Capability>
+</WMS_Capabilities>

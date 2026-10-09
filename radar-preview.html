@@ -1,0 +1,19 @@
+<!doctype html>
+<!--
+  DEV ONLY harness for the radar view (src/features/radar). Vite builds only index.html, so this page never ships.
+  Open http://localhost:5175/nws-weather/radar-preview.html
+  Query: lat, lon, theme=light|dark|system, alerts=0|1, open=0|1, reduced=1, fail=caps,wmstiles,mesonet|all
+  Keys:  t = toggle theme
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Radar preview (dev)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/features/radar/preview.tsx"></script>
+  </body>
+</html>

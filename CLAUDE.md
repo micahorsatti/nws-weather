@@ -33,7 +33,7 @@ Static site only — no server. Hosted on GitHub Pages at `https://micahorsatti.
 | Current AQI + daily AQI forecast (official) | EPA AirNow `www.airnowapi.org` — needs the user's free key, entered in Settings, stored only in localStorage |
 | Place search (city or ZIP) | Open-Meteo geocoding `geocoding-api.open-meteo.com/v1/search?countryCode=US` |
 | Radar | NWS MRMS WMS `opengeo.ncep.noaa.gov/geoserver/{conus,alaska,hawaii,carib,guam}/..._bref_qcd/ows` (TIME dimension) |
-| Basemap | CARTO `{a-d}.basemaps.cartocdn.com/{light_all,dark_all}` (attribution: © OpenStreetMap contributors © CARTO) |
+| Basemap | Esri Light/Dark Gray Canvas `server.arcgisonline.com/ArcGIS/rest/services/Canvas/...` (key-less; CARTO now requires a key). Attribution: Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community |
 | Sunrise/sunset | computed on device with `suncalc` |
 
 ## Product rules

@@ -42,7 +42,7 @@ The key is stored only on your device, and the app uses it only to request data 
 | Air-quality model estimates | Open-Meteo, using the Copernicus CAMS model |
 | Radar | NOAA MRMS, via `opengeo.ncep.noaa.gov` |
 | Official air quality (optional key) | EPA AirNow |
-| Map basemap | © OpenStreetMap contributors © CARTO |
+| Map basemap | Esri Light/Dark Gray Canvas — Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community |
 
 This is an independent app and is not an official National Weather Service product. For life-safety decisions, rely on official NWS warnings and your local authorities.
 

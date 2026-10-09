@@ -34,8 +34,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
         runtimeCaching: [
           {
-            // Basemap tiles for the radar view; weather data itself is cached by the data layer.
-            urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\//,
+            // Esri basemap tiles for the radar view; weather data itself is cached by the data layer.
+            urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/Canvas\//,
             handler: 'CacheFirst',
             options: {
               cacheName: 'basemap-tiles',
