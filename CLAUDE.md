@@ -4,7 +4,7 @@ Installable PWA (React 19 + Vite 8 + TypeScript 7 + vite-plugin-pwa 2) showing N
 Service data: current conditions, hourly, 10-day, "Feels like", precipitation, wind, UV, AQI,
 severe-weather alerts, radar, sunrise/sunset and the forecasters' written text.
 Static site only — no server. Hosted on GitHub Pages at `https://micahorsatti.github.io/nws-weather/`
-(Vite `base: '/nws-weather/'`). Private repo `micahorsatti/nws-weather`.
+(Vite `base: '/nws-weather/'`). Public repo `micahorsatti/nws-weather` — never commit secrets.
 
 ## Commands
 - `npm run dev` — dev server at http://localhost:5173/nws-weather/
