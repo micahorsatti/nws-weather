@@ -73,7 +73,10 @@ describe('time zones (always the location\'s, never the device\'s)', () => {
 
   it('falls back to a usable zone for a missing or invalid one', () => {
     expect(resolveZone(CHI)).toBe(CHI);
-    expect(resolveZone('Not/AZone')).toMatch(/\//);
+    // The fallback is the device zone, which is plain "UTC" on CI runners, so only require that it's usable.
+    const fallback = resolveZone('Not/AZone');
+    expect(fallback).not.toBe('Not/AZone');
+    expect(() => new Intl.DateTimeFormat('en-US', { timeZone: fallback })).not.toThrow();
     expect(resolveZone(undefined)).toBeTruthy();
     expect(() => formatClock(T, resolveZone(''))).not.toThrow();
   });
