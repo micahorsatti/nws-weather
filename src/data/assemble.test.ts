@@ -388,10 +388,7 @@ describe('AirNow', () => {
       {
         airnow: (url) => {
           if (url.includes('/observation/')) return { status: 200, body: [obs('O3', 41), obs('PM2.5', 57), obs('PM10', -1)] };
-          const date = new URL(url).searchParams.get('date');
-          if (date === '2026-10-08') return { status: 200, body: [forecast('2026-10-08', 'PM2.5', 51)] };
-          if (date === '2026-10-09') return { status: 200, body: [forecast('2026-10-09', 'O3', -1)] };
-          return { status: 200, body: [] };
+          return { status: 200, body: [forecast('2026-10-08', 'PM2.5', 51), forecast('2026-10-09', 'O3', -1)] };
         },
       },
       { airNowKey: KEY },
@@ -411,7 +408,7 @@ describe('AirNow', () => {
 
     // The key is sent only to AirNow, and never ends up in the result.
     const keyed = mock.calls.filter((u) => u.includes(KEY));
-    expect(keyed.length).toBe(4);
+    expect(keyed.length).toBe(2); // current observations + current forecast
     expect(keyed.every((u) => new URL(u).host === 'www.airnowapi.org')).toBe(true);
     expect(JSON.stringify(b)).not.toContain(KEY);
   });
@@ -423,7 +420,7 @@ describe('AirNow', () => {
     expect(b.problems).toEqual([{ source: 'airnow', message: 'AirNow rejected the API key' }]);
     expect(b.airNow?.source).toBe('open-meteo');
     expect(b.airForecast.every((d) => d.source === 'open-meteo')).toBe(true);
-    expect(mock.count('airnow')).toBe(4); // one try each: a 401 is not retried
+    expect(mock.count('airnow')).toBe(2); // one try each: a 401 is not retried
     expect(JSON.stringify(b)).not.toContain(KEY);
     for (const spy of logs) expect(spy).not.toHaveBeenCalled();
   });
@@ -434,6 +431,15 @@ describe('AirNow', () => {
     expect(b.problems).toEqual([{ source: 'airnow', message: 'AirNow is temporarily unavailable.' }]);
     expect(b.airNow?.source).toBe('open-meteo');
     expect(JSON.stringify(b)).not.toContain(KEY);
+  });
+
+  it('names a retired AirNow service (HTTP 410) instead of a vague error, and still falls back', async () => {
+    const fx = loadFixture('linn-ks');
+    const { bundle: b } = await load(fx, { airnow: { status: 410, body: 'Gone' } }, { airNowKey: KEY });
+    expect(b.problems).toEqual([
+      { source: 'airnow', message: 'AirNow has retired the service this app uses (HTTP 410), so the app needs an update.' },
+    ]);
+    expect(b.airNow?.source).toBe('open-meteo');
   });
 
   it('is quietly absent when AirNow has no reporting area nearby', async () => {

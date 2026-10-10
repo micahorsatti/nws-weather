@@ -219,6 +219,9 @@ export function describeFailure(err: unknown, what: string): string {
     case 'not-found':
       return `${capitalize(what)} has no data for this location.`;
     default:
-      return `${capitalize(what)} returned an unexpected response.`;
+      // The status makes a changed or retired service diagnosable from a screenshot.
+      return err instanceof HttpError
+        ? `${capitalize(what)} returned an unexpected response (HTTP ${err.status}).`
+        : `${capitalize(what)} returned an unexpected response.`;
   }
 }

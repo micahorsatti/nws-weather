@@ -2,7 +2,7 @@ import { Component, Suspense, lazy, useEffect, useRef, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { WeatherAlert } from '../../data/types';
-import { usePageLock, useRestoreFocus } from '../useModal';
+import { useBackToClose, usePageLock, useRestoreFocus } from '../useModal';
 import { IconChevronRight, IconClose } from './Icons';
 
 // The radar view is a heavy chunk (Leaflet + map code): load it only when the user opens radar.
@@ -51,12 +51,13 @@ export function RadarCard({ lat, lon, alerts }: RadarCardProps) {
 
 /**
  * Hosts the radar view full-screen. RadarView is a complete dialog on its own (initial focus, Escape, Tab
- * trap), so this adds only what it can't: lock the page behind it, a loading/failure state, and returning
- * focus to the button that opened it.
+ * trap), so this adds only what it can't: lock the page behind it, Back closes it, a loading/failure state,
+ * and returning focus to the button that opened it.
  */
 function RadarHost({ lat, lon, alerts, onClose }: RadarCardProps & { onClose: () => void }) {
   usePageLock();
   useRestoreFocus();
+  useBackToClose(onClose);
   return createPortal(
     <RadarBoundary onClose={onClose}>
       <Suspense fallback={<RadarMessage title="Loading radar…" busy onClose={onClose} />}>

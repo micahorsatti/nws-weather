@@ -136,8 +136,10 @@ export function assembleBundle(place: Place, point: PointInfo, now: number, resu
 
   let airNowResult: AirNowResult | null = null;
   if (results.airNow) {
-    if (results.airNow.status === 'fulfilled') airNowResult = results.airNow.value;
-    else {
+    if (results.airNow.status === 'fulfilled') {
+      airNowResult = results.airNow.value;
+      if (airNowResult.problem) problems.push({ source: 'airnow', message: airNowResult.problem });
+    } else {
       const reason = results.airNow.reason as unknown;
       problems.push({
         source: 'airnow',
