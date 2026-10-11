@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllCaches } from '../cache';
 import { BadResponseError, HttpError, httpConfig } from '../http';
-import { fixtureNow, loadFixture, mockFetch, serverError, type Fixture } from '../testing/fixtures';
+import { AMERICAN_SAMOA_POINT, fixtureNow, loadFixture, mockFetch, serverError, type Fixture } from '../testing/fixtures';
 import { WeatherLoadError, type WeatherAlert } from '../types';
 import { loadAlerts, parseAlerts, sortAlerts } from './alerts';
 import { discussionUrl, loadForecastDiscussion, newestProductId, parseDiscussion } from './discussion';
@@ -124,6 +124,25 @@ describe('NWS /points', () => {
     expect(err).toBeInstanceOf(WeatherLoadError);
     expect((err as WeatherLoadError).kind).toBe('out-of-coverage');
     expect((err as WeatherLoadError).message).toMatch(/United States/);
+  });
+
+  it('reports out-of-coverage, once and for good, for a place NWS knows but publishes no digital forecast for (American Samoa)', async () => {
+    expect(() => parsePoint(AMERICAN_SAMOA_POINT.body)).toThrow(WeatherLoadError);
+    const mock = mockFetch(null, { points: AMERICAN_SAMOA_POINT });
+    vi.stubGlobal('fetch', mock.fetch);
+    const err = await loadPoint(-14.2756, -170.702).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WeatherLoadError);
+    expect((err as WeatherLoadError).kind).toBe('out-of-coverage'); // not "NWS is down, try again in a few minutes"
+    expect((err as WeatherLoadError).message).toMatch(/no digital forecast/);
+    expect(mock.count('points')).toBe(1); // a permanent answer is not retried
+    await loadPoint(-14.2756, -170.702).catch(() => undefined);
+    expect(mock.count('points')).toBe(2); // and is not cached as if it were a usable point
+  });
+
+  it('still calls a point with missing essentials (but a grid-like shape) a bad response, not "no forecast"', () => {
+    expect(() => parsePoint({ properties: { gridId: 'TOP', gridX: 32, timeZone: 'America/Chicago' } })).toThrow(BadResponseError);
+    expect(() => parsePoint({ properties: { gridId: null, gridX: null, gridY: null, forecast: 'https://x', timeZone: 'America/Chicago' } })).toThrow(BadResponseError);
+    expect(() => parsePoint({ properties: { gridId: null, gridX: null, gridY: null, forecast: null } })).toThrow(BadResponseError); // no time zone either
   });
 
   it('rethrows other failures when nothing is cached', async () => {

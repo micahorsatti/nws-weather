@@ -37,6 +37,8 @@ export interface MapOptions {
   theme: Theme;
   /** Turn off Leaflet's pan/zoom/fade animations. */
   reducedMotion: boolean;
+  /** IANA zone the times in alert popups are shown in (the location's, not the device's); the device zone when absent. */
+  timeZone?: string;
   callbacks: MapCallbacks;
 }
 
@@ -76,6 +78,7 @@ export class RadarMapController {
   private readonly alertGroup: L.LayerGroup;
   private readonly resizeObserver: ResizeObserver | null;
   private readonly reducedMotion: boolean;
+  private readonly timeZone: string | undefined;
 
   private home: L.LatLng;
   private theme: Theme;
@@ -95,6 +98,7 @@ export class RadarMapController {
     this.cb = options.callbacks;
     this.theme = options.theme;
     this.reducedMotion = options.reducedMotion;
+    this.timeZone = options.timeZone;
     this.home = L.latLng(options.lat, options.lon);
 
     const motion = !options.reducedMotion;
@@ -246,7 +250,7 @@ export class RadarMapController {
   }
 
   private popupContent(shape: AlertShape): HTMLElement {
-    const { title, detail } = popupText(shape, Date.now());
+    const { title, detail } = popupText(shape, Date.now(), { locale: 'en-US', timeZone: this.timeZone });
     const root = document.createElement('div');
     root.className = 'rv-popup';
     const heading = document.createElement('strong');

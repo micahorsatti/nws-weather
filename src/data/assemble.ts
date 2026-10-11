@@ -5,6 +5,11 @@
  * sources load in parallel. Individual failures become `problems` entries and the bundle is built from
  * whatever succeeded. Only a failed point lookup, or the forecast, hourly forecast and grid all being
  * unusable, is fatal.
+ *
+ * A slow optional source must not hold the whole screen hostage: once the forecast data and alerts are in,
+ * the station observation, GFS days / UV and air quality get OPTIONAL_GRACE_MS more; if they are still out,
+ * `onPartial` receives a bundle built without them (nothing is reported as a problem yet) and the returned
+ * promise resolves with the complete bundle when they have all answered or failed.
  */
 import { AirNowKeyError, loadAirNow, type AirNowResult } from './airnow';
 import { currentFromHour, currentFromObservation } from './current';
@@ -38,24 +43,36 @@ import {
   type WeatherBundle,
 } from './types';
 
+/** How long the optional sources get, after the forecast data and alerts are in, before a first bundle is built without them. */
+export const OPTIONAL_GRACE_MS = 3_000;
+
 export interface LoadOptions {
   /** User's EPA AirNow key from settings; when absent, AQI comes from Open-Meteo. */
   airNowKey?: string;
   signal?: AbortSignal;
+  /**
+   * Called at most once, only when optional sources (station observation, GFS days and UV, air quality) are
+   * still out OPTIONAL_GRACE_MS after the forecast arrived, with a bundle built from what has answered so far.
+   * The promise returned by loadWeather still resolves with the complete bundle. Never called when everything
+   * answers in time.
+   */
+  onPartial?: (bundle: WeatherBundle) => void;
 }
 
 type Settled<T> = PromiseSettledResult<T>;
 
-/** Outcome of every source request (the I/O half of loadWeather). */
+/**
+ * Outcome of every source request (the I/O half of loadWeather). For the optional sources, `null` means
+ * "has not answered yet": it produces neither data nor a problem (for airNow it also means "no key, not asked").
+ */
 export interface SourceResults {
   forecast: Settled<NwsForecast>;
   hourly: Settled<NwsHourlyPeriod[]>;
   grid: Settled<ParsedGrid>;
-  observation: Settled<ParsedObservation | null>;
   alerts: Settled<WeatherAlert[]>;
-  gfs: Settled<GfsData>;
-  air: Settled<OpenMeteoAir>;
-  /** null when no AirNow key was supplied. */
+  observation: Settled<ParsedObservation | null> | null;
+  gfs: Settled<GfsData> | null;
+  air: Settled<OpenMeteoAir> | null;
   airNow: Settled<AirNowResult> | null;
 }
 
@@ -113,26 +130,28 @@ export function assembleBundle(place: Place, point: PointInfo, now: number, resu
     problems.push({ source: 'nws-grid', message: 'NWS detailed forecast data is out of date.' });
   }
 
-  if (results.observation.status === 'rejected') {
+  if (results.observation?.status === 'rejected') {
     problems.push({
       source: 'nws-observation',
       message: describeFailure(results.observation.reason, 'current station observations'),
     });
   }
-  const observation = results.observation.status === 'fulfilled' ? results.observation.value : null;
+  const observation = results.observation?.status === 'fulfilled' ? results.observation.value : null;
 
   let alerts: WeatherAlert[] = [];
   if (results.alerts.status === 'fulfilled') alerts = results.alerts.value;
   else problems.push({ source: 'nws-alerts', message: 'Weather alerts could not be checked right now.' });
 
-  const gfs = results.gfs.status === 'fulfilled' ? results.gfs.value : null;
-  if (!gfs) {
+  const gfs = results.gfs?.status === 'fulfilled' ? results.gfs.value : null;
+  if (results.gfs?.status === 'rejected') {
     problems.push({ source: 'open-meteo-gfs', message: 'Days 8 to 10 of the outlook are unavailable.' });
     problems.push({ source: 'open-meteo-uv', message: 'The UV index forecast is unavailable.' });
   }
 
-  const air = results.air.status === 'fulfilled' ? results.air.value : null;
-  if (!air) problems.push({ source: 'open-meteo-aqi', message: 'The hourly air quality forecast is unavailable.' });
+  const air = results.air?.status === 'fulfilled' ? results.air.value : null;
+  if (results.air?.status === 'rejected') {
+    problems.push({ source: 'open-meteo-aqi', message: 'The hourly air quality forecast is unavailable.' });
+  }
 
   let airNowResult: AirNowResult | null = null;
   if (results.airNow) {
@@ -205,6 +224,25 @@ export function assembleBundle(place: Place, point: PointInfo, now: number, resu
   };
 }
 
+/** A request's outcome, filled in the moment it settles (null until then). */
+interface Tracked<T> {
+  result: Settled<T> | null;
+  done: Promise<void>;
+}
+
+function track<T>(request: Promise<T>): Tracked<T> {
+  const tracked: Tracked<T> = { result: null, done: Promise.resolve() };
+  tracked.done = request.then(
+    (value) => {
+      tracked.result = { status: 'fulfilled', value };
+    },
+    (reason: unknown) => {
+      tracked.result = { status: 'rejected', reason };
+    },
+  );
+  return tracked;
+}
+
 /**
  * Fetch every source for a place and assemble a WeatherBundle.
  * Throws WeatherLoadError ('out-of-coverage' | 'network' | 'nws-unavailable' | 'unknown') when nothing
@@ -226,29 +264,54 @@ export async function loadWeather(place: Place, opts: LoadOptions = {}): Promise
   const tz = info.timeZone;
   const key = opts.airNowKey?.trim();
 
-  const [forecast, hourly, grid, observation, alerts, gfs, air, airNow] = await Promise.allSettled([
-    loadForecast(urls.forecast, signal),
-    loadHourlyForecast(urls.forecastHourly, signal),
-    loadGrid(urls.forecastGrid, signal),
-    loadCurrentObservation(urls.stations, now, signal),
-    loadAlerts(place.lat, place.lon, now, signal),
-    loadGfs(place.lat, place.lon, tz, signal),
-    loadOpenMeteoAir(place.lat, place.lon, tz, signal),
-    key
-      ? loadAirNow({ lat: place.lat, lon: place.lon, key, today: localDateOf(now, tz), timeZone: tz, now, signal })
-      : Promise.resolve(null),
-  ]);
+  // Every request starts now, in this order; each outcome is recorded the moment it settles.
+  const forecast = track(loadForecast(urls.forecast, signal));
+  const hourly = track(loadHourlyForecast(urls.forecastHourly, signal));
+  const grid = track(loadGrid(urls.forecastGrid, signal));
+  const observation = track(loadCurrentObservation(urls.stations, now, signal));
+  const alerts = track(loadAlerts(place.lat, place.lon, now, signal));
+  const gfs = track(loadGfs(place.lat, place.lon, tz, signal));
+  const air = track(loadOpenMeteoAir(place.lat, place.lon, tz, signal));
+  // No key -> no AirNow request; a failed request is reported as a problem.
+  const airNow = key
+    ? track(loadAirNow({ lat: place.lat, lon: place.lon, key, today: localDateOf(now, tz), timeZone: tz, now, signal }))
+    : null;
+
+  const results = (): SourceResults => ({
+    forecast: forecast.result as Settled<NwsForecast>,
+    hourly: hourly.result as Settled<NwsHourlyPeriod[]>,
+    grid: grid.result as Settled<ParsedGrid>,
+    alerts: alerts.result as Settled<WeatherAlert[]>,
+    observation: observation.result,
+    gfs: gfs.result,
+    air: air.result,
+    airNow: airNow ? airNow.result : null,
+  });
+
+  // The forecast data and the alerts are the screen: wait for them.
+  await Promise.all([forecast.done, hourly.done, grid.done, alerts.done]);
   throwIfAborted(signal);
 
-  return assembleBundle(place, info, now, {
-    forecast,
-    hourly,
-    grid,
-    observation,
-    alerts,
-    gfs,
-    air,
-    // No key -> no AirNow request; a rejected request is reported as a problem.
-    airNow: key ? (airNow as Settled<AirNowResult>) : null,
-  });
+  const optional = [observation, gfs, air, ...(airNow ? [airNow] : [])];
+  const optionalDone = Promise.all(optional.map((t) => t.done));
+  if (opts.onPartial && optional.some((t) => t.result === null)) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const graceOver = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), OPTIONAL_GRACE_MS);
+    });
+    const allIn = await Promise.race([optionalDone.then(() => true as const), graceOver]);
+    clearTimeout(timer);
+    throwIfAborted(signal);
+    if (!allIn) {
+      try {
+        opts.onPartial(assembleBundle(place, info, now, results()));
+      } catch {
+        // Nothing usable yet (the complete bundle below will say why), or the callback failed: the load goes on.
+      }
+    }
+  }
+  await optionalDone;
+  throwIfAborted(signal);
+
+  return assembleBundle(place, info, now, results());
 }

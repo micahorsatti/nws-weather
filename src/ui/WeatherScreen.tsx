@@ -56,7 +56,7 @@ export function WeatherScreen({ bundle, now, units, loadDiscussion }: WeatherScr
       </div>
 
       <div className="slot slot--radar">
-        <RadarCard lat={bundle.place.lat} lon={bundle.place.lon} alerts={alerts} />
+        <RadarCard lat={bundle.place.lat} lon={bundle.place.lon} alerts={alerts} timeZone={tz} />
       </div>
 
       <div className="slot slot--tiles">
@@ -81,7 +81,13 @@ export function WeatherScreen({ bundle, now, units, loadDiscussion }: WeatherScr
         <Footer problems={bundle.problems} />
       </div>
 
-      {sheet === 'alerts' ? <AlertsSheet alerts={alerts} now={now} tz={tz} onClose={close} /> : null}
+      {sheet === 'alerts' ? <AlertsSheet
+          alerts={alerts}
+          now={now}
+          tz={tz}
+          pageUrl={`https://forecast.weather.gov/MapClick.php?lat=${bundle.place.lat.toFixed(4)}&lon=${bundle.place.lon.toFixed(4)}`}
+          onClose={close}
+        /> : null}
       {sheet === 'air' ? <AirSheet air={bundle.airNow} aqi={aqiNow} days={bundle.airForecast} todayKey={localDateKey(now, tz)} onClose={close} /> : null}
       {sheet === 'discussion' ? <DiscussionSheet wfo={bundle.point.wfo} tz={tz} load={loadDiscussion} onClose={close} /> : null}
     </div>

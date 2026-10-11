@@ -1,15 +1,17 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAllCaches } from './cache';
-import { assembleBundle, loadWeather, mergeAirForecast, type LoadOptions, type SourceResults } from './assemble';
+import { OPTIONAL_GRACE_MS, assembleBundle, loadWeather, mergeAirForecast, type LoadOptions, type SourceResults } from './assemble';
 import { httpConfig, isAbortError } from './http';
 import { parseAlerts } from './nws/alerts';
 import { parseForecast, parseHourlyForecast } from './nws/forecast';
 import { parseGrid } from './nws/grid';
 import { floorToHour, localDateOf } from './time';
 import {
+  AMERICAN_SAMOA_POINT,
   fixtureNow,
   loadFixture,
   mockFetch,
+  routeOf,
   serverError,
   type Fixture,
   type MockFetch,
@@ -361,6 +363,189 @@ function parsePointInfo(fx: Fixture): PointInfo {
   };
 }
 
+describe('slow optional sources', () => {
+  // The forecast, hourly forecast, grid and alerts are the screen. The station observation, GFS days / UV and air
+  // quality are extras: when they are slow, a first bundle goes out without them (onPartial) instead of holding the
+  // skeleton up, and the complete bundle follows. Timers are faked so the 3-second grace period costs nothing.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+  });
+
+  /** A fetch that answers each listed route only after the given number of (fake) milliseconds. */
+  function delayed(mock: MockFetch, delays: Partial<Record<RouteKey, number>>): typeof fetch {
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      const route = routeOf(String(input));
+      const ms = route ? delays[route] : undefined;
+      if (!ms) return mock.fetch(input, init);
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => mock.fetch(input, init).then(resolve, reject), ms);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    }) as typeof fetch;
+  }
+
+  const SLOW = { stations: 6_000, gfs: 7_000, aq: 7_000 } as const;
+  const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+
+  function start(over: Partial<Record<RouteKey, Override>> = {}, delays: Partial<Record<RouteKey, number>> = SLOW, opts: LoadOptions = {}) {
+    const fx = loadFixture('linn-ks');
+    vi.setSystemTime(fixtureNow(fx));
+    const mock = mockFetch(fx, over);
+    vi.stubGlobal('fetch', delayed(mock, delays));
+    const onPartial = vi.fn();
+    const promise = loadWeather(placeOf(fx), { onPartial, ...opts });
+    const settled = promise.then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    return { fx, mock, onPartial, promise, settled };
+  }
+
+  it('hands over a bundle without them once the grace period is up, then the complete bundle', async () => {
+    const { onPartial, settled } = start();
+    await tick(OPTIONAL_GRACE_MS - 100);
+    expect(onPartial).not.toHaveBeenCalled();
+    await tick(200);
+    expect(onPartial).toHaveBeenCalledTimes(1);
+
+    const early = onPartial.mock.calls[0][0] as WeatherBundle;
+    expect(early.current?.source).toBe('forecast'); // no station report yet: the current forecast hour
+    expect(early.daily).toHaveLength(8); // no GFS yet: NWS days only (the recorded forecast starts at "Tonight": eight dates)
+    expect(early.daily.every((d) => d.source === 'nws')).toBe(true);
+    expect(early.hourly.length).toBeGreaterThan(100);
+    expect(early.hourly.every((h) => h.uvIndex === null && h.aqi === null)).toBe(true);
+    expect(early.airNow).toBeNull();
+    expect(early.airForecast).toEqual([]);
+    // Slow is not failed: nothing is reported as a problem yet.
+    expect(early.problems).toEqual([]);
+
+    await tick(5_000);
+    const done = (await settled) as { value: WeatherBundle };
+    const full = done.value;
+    expect(full.current?.source).toBe('observation');
+    expect(full.daily).toHaveLength(10);
+    expect(full.hourly.slice(0, 40).every((h) => h.uvIndex !== null)).toBe(true);
+    expect(full.airNow?.source).toBe('open-meteo');
+    expect(full.problems).toEqual([]);
+    expect(onPartial).toHaveBeenCalledTimes(1); // once, not again for each source that arrives
+  });
+
+  it('never calls onPartial when everything answers within the grace period', async () => {
+    const { onPartial, settled } = start({}, { stations: 1_000, gfs: 2_000 });
+    await tick(2_500);
+    const done = (await settled) as { value: WeatherBundle };
+    expect(done.value.daily).toHaveLength(10);
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it('does not build an early bundle when the caller did not ask for one: it waits for everything, as before', async () => {
+    const fx = loadFixture('linn-ks');
+    vi.setSystemTime(fixtureNow(fx));
+    vi.stubGlobal('fetch', delayed(mockFetch(fx), SLOW));
+    const promise = loadWeather(placeOf(fx));
+    let resolved = false;
+    void promise.then(() => {
+      resolved = true;
+    });
+    await tick(OPTIONAL_GRACE_MS + 1_000);
+    expect(resolved).toBe(false);
+    await tick(4_000);
+    expect((await promise).daily).toHaveLength(10);
+  });
+
+  it('treats the alerts as part of the screen: a slow alerts request holds the first bundle, and no early one is sent', async () => {
+    const { onPartial, promise } = start({}, { alerts: 5_000 });
+    let resolved = false;
+    void promise.then(() => {
+      resolved = true;
+    });
+    await tick(4_000);
+    expect(resolved).toBe(false);
+    expect(onPartial).not.toHaveBeenCalled();
+    await tick(1_500);
+    expect((await promise).current?.source).toBe('observation');
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it('reports a source that fails after the early bundle only in the complete bundle', async () => {
+    const { onPartial, settled } = start({ gfs: serverError(500) }, { gfs: 7_000 });
+    await tick(OPTIONAL_GRACE_MS + 100);
+    expect(onPartial).toHaveBeenCalledTimes(1);
+    expect((onPartial.mock.calls[0][0] as WeatherBundle).problems).toEqual([]);
+    await tick(15_000); // two delayed tries, both 500
+    const full = ((await settled) as { value: WeatherBundle }).value;
+    expect(full.problems.map((p) => p.source)).toEqual(['open-meteo-gfs', 'open-meteo-uv']);
+    expect(full.daily).toHaveLength(8);
+  });
+
+  it('still reports a failure that happens within the grace period right away (no early bundle needed)', async () => {
+    const { onPartial, settled } = start({ gfs: serverError(500) }, { stations: 1_000 });
+    await tick(2_000);
+    const full = ((await settled) as { value: WeatherBundle }).value;
+    expect(full.problems.map((p) => p.source)).toContain('open-meteo-gfs');
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it('aborts cleanly while waiting for the optional sources: no early bundle, an AbortError', async () => {
+    const controller = new AbortController();
+    const { onPartial, settled } = start({}, SLOW, { signal: controller.signal });
+    await tick(1_000);
+    controller.abort();
+    await tick(10);
+    const outcome = (await settled) as { error?: unknown };
+    expect(isAbortError(outcome.error)).toBe(true);
+    await tick(OPTIONAL_GRACE_MS * 2);
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it('carries on when the early-bundle callback throws', async () => {
+    const { onPartial, settled } = start();
+    onPartial.mockImplementation(() => {
+      throw new Error('the callback is broken');
+    });
+    await tick(OPTIONAL_GRACE_MS + 100);
+    expect(onPartial).toHaveBeenCalledTimes(1);
+    await tick(5_000);
+    const full = ((await settled) as { value: WeatherBundle }).value;
+    expect(full.daily).toHaveLength(10);
+  });
+
+  it('assembleBundle treats a source that has not answered as neither data nor a problem', () => {
+    const fx = loadFixture('linn-ks');
+    const results: SourceResults = {
+      forecast: { status: 'fulfilled', value: parseForecast(fx.responses.forecast?.body) },
+      hourly: { status: 'fulfilled', value: parseHourlyForecast(fx.responses.hourly?.body) },
+      grid: { status: 'fulfilled', value: parseGrid(fx.responses.grid?.body) },
+      alerts: { status: 'fulfilled', value: [] },
+      observation: null,
+      gfs: null,
+      air: null,
+      airNow: null,
+    };
+    const bundle = assembleBundle(placeOf(fx), parsePointInfo(fx), fixtureNow(fx), results);
+    expect(bundle.problems).toEqual([]);
+    expect(bundle.current?.source).toBe('forecast');
+    expect(bundle.daily).toHaveLength(8);
+
+    // The same sources having failed is a different story.
+    const failed: SourceResults = {
+      ...results,
+      observation: { status: 'rejected', reason: new Error('x') },
+      gfs: { status: 'rejected', reason: new Error('x') },
+      air: { status: 'rejected', reason: new Error('x') },
+    };
+    expect(assembleBundle(placeOf(fx), parsePointInfo(fx), fixtureNow(fx), failed).problems.map((p) => p.source).sort()).toEqual([
+      'nws-observation',
+      'open-meteo-aqi',
+      'open-meteo-gfs',
+      'open-meteo-uv',
+    ]);
+  });
+});
+
 describe('AirNow', () => {
   const obs = (parameter: string, aqi: number): Record<string, unknown> => ({
     DateObserved: '2026-10-08 ',
@@ -479,6 +664,16 @@ describe('fatal failures', () => {
     expect(err).toBeInstanceOf(WeatherLoadError);
     expect((err as WeatherLoadError).kind).toBe('out-of-coverage');
     expect(mock.calls).toEqual(['https://api.weather.gov/points/43.6532,-79.3832']);
+  });
+
+  it('reports out-of-coverage after a single request for American Samoa, where NWS has no forecast grid (not "NWS is having trouble")', async () => {
+    const mock = mockFetch(null, { points: AMERICAN_SAMOA_POINT });
+    vi.stubGlobal('fetch', mock.fetch);
+    const place: Place = { id: placeIdFor(-14.2756, -170.702), name: 'Pago Pago, AS', lat: -14.2756, lon: -170.702, kind: 'search' };
+    const err = await loadWeather(place).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WeatherLoadError);
+    expect((err as WeatherLoadError).kind).toBe('out-of-coverage');
+    expect(mock.calls).toEqual(['https://api.weather.gov/points/-14.2756,-170.7020']);
   });
 
   it('maps an unreachable network to "network"', async () => {

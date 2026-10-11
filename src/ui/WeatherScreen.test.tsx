@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AirQualityDay, AirQualityNow } from '../data/types';
 import { getMockBundle } from '../mocks';
 import type { MockName } from '../mocks';
 import type { UnitSystem } from '../lib/units';
 import type { RadarViewProps } from '../features/radar/RadarView';
+import { attribution } from './components/AirSheet';
 import { WeatherScreen } from './WeatherScreen';
 
 // Rendering the whole screen in jsdom is slow when the full suite runs its files in parallel: give every test room.
@@ -12,8 +14,8 @@ vi.setConfig({ testTimeout: 30_000 });
 
 // The radar view is a heavy Leaflet chunk; the integration only needs to know it is mounted with the right props.
 vi.mock('../features/radar/RadarView', () => ({
-  default: ({ lat, lon, alerts, onClose }: RadarViewProps) => (
-    <div role="dialog" aria-label="Fake radar" data-lat={lat} data-lon={lon} data-alerts={alerts.length}>
+  default: ({ lat, lon, alerts, onClose, timeZone }: RadarViewProps) => (
+    <div role="dialog" aria-label="Fake radar" data-lat={lat} data-lon={lon} data-alerts={alerts.length} data-tz={timeZone}>
       <button type="button" onClick={onClose}>
         Close fake radar
       </button>
@@ -284,6 +286,37 @@ describe('detail tiles', () => {
   });
 });
 
+describe('air quality sheet attribution', () => {
+  const day = (date: string, source: AirQualityDay['source']): AirQualityDay => ({ date, aqi: 40, categoryNumber: 1, primaryPollutant: null, discussion: null, source });
+  const official: AirQualityNow = { source: 'airnow', aqi: 40, primaryPollutant: 'O3', observedAt: '2026-07-15T18:00:00Z', reportingArea: 'Topeka' };
+  const model: AirQualityNow = { ...official, source: 'open-meteo', reportingArea: null };
+
+  it('does not call a model forecast official when AirNow supplied only the current reading', () => {
+    // The AirNow forecast service can fail on its own; Open-Meteo then fills every forecast day.
+    expect(attribution(official, [day('2026-07-16', 'open-meteo'), day('2026-07-17', 'open-meteo')])).toMatch(
+      /current reading is official.*forecast days are computer-model estimates/,
+    );
+    expect(attribution(official, [day('2026-07-16', 'airnow'), day('2026-07-17', 'open-meteo')])).toMatch(/AirNow forecasts are official.*remaining forecast days are computer-model/);
+  });
+
+  it('keeps the plain wording when everything is official or nothing is', () => {
+    expect(attribution(official, [day('2026-07-16', 'airnow')])).toBe('Official readings and forecasts come from the EPA’s AirNow program.');
+    expect(attribution(official, [])).toBe('Official readings and forecasts come from the EPA’s AirNow program.');
+    expect(attribution(model, [day('2026-07-16', 'open-meteo')])).toMatch(/computer-model estimate.*not an official reading.*free AirNow key/);
+    expect(attribution(null, [])).toMatch(/computer-model estimate/);
+  });
+
+  it('shows the honest sentence in the sheet', () => {
+    const bundle = getMockBundle('summer', NOW);
+    bundle.airForecast = bundle.airForecast.map((d) => ({ ...d, source: 'open-meteo' as const }));
+    render(<WeatherScreen bundle={bundle} now={NOW} units="imperial" loadDiscussion={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Air quality \d+/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Air quality' });
+    expect(dialog.textContent).toMatch(/current reading is official data from the EPA’s AirNow program/);
+    expect(dialog.textContent).not.toMatch(/Official readings and forecasts come from/);
+  });
+});
+
 describe('forecaster discussion', () => {
   it('loads the discussion for the forecast office and shows it without the routing header', async () => {
     const bundle = getMockBundle('summer', NOW);
@@ -331,6 +364,7 @@ describe('radar', () => {
     expect(radar.getAttribute('data-lat')).toBe('39.6797');
     expect(radar.getAttribute('data-lon')).toBe('-96.9064');
     expect(radar.getAttribute('data-alerts')).toBe('3');
+    expect(radar.getAttribute('data-tz')).toBe('America/Chicago'); // scan and alert times are shown in the location's zone
 
     fireEvent.click(within(radar).getByRole('button', { name: 'Close fake radar' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Fake radar' })).toBeNull());

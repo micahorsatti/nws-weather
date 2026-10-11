@@ -3,10 +3,13 @@
  *  - restores the last good bundle for the place from the on-device cache immediately (status 'ready',
  *    fromCache true), then fetches (refreshing true); with no cache the status is 'loading'
  *  - a failed refresh keeps the bundle and sets `error`; a failed first load is status 'error'
- *  - refreshes every 10 minutes while the page is visible, and on returning to the foreground / coming
- *    back online when the data is older than 5 minutes
+ *  - refreshes every 10 minutes while the page is visible and the browser is online, on returning to the
+ *    foreground when the data is older than 5 minutes, and on coming back online when the data is that old
+ *    or the last refresh failed (a manual refresh() always tries)
  *  - aborts the in-flight request when the place changes or the component unmounts, and shares one request
  *    between effect re-runs (React StrictMode mounts, unmounts and re-mounts every effect in development)
+ *  - a first load with nothing cached shows an early bundle (status 'ready', refreshing true) when slow optional
+ *    sources would otherwise keep the skeleton up; the complete bundle replaces it
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadWeather } from './assemble';
@@ -26,6 +29,9 @@ interface Shared {
   promise: Promise<WeatherBundle>;
   controller: AbortController;
   refs: number;
+  /** The early bundle loadWeather handed over while slow optional sources were still out (replayed to late joiners). */
+  partial: WeatherBundle | null;
+  listeners: Set<(bundle: WeatherBundle) => void>;
 }
 
 const inflight = new Map<string, Shared>();
@@ -49,24 +55,31 @@ interface Subscription {
   release(): void;
 }
 
-function acquire(place: Place, airNowKey: string | undefined): Subscription {
+function acquire(place: Place, airNowKey: string | undefined, onPartial: (bundle: WeatherBundle) => void): Subscription {
   const key = requestKey(place, airNowKey);
   let shared = inflight.get(key);
   if (!shared) {
     const controller = new AbortController();
-    const created: Shared = {
-      controller,
-      refs: 0,
-      promise: loadWeather(place, { airNowKey, signal: controller.signal }).finally(() => {
-        if (inflight.get(key) === created) inflight.delete(key);
-      }),
-    };
+    // `promise` is assigned just below; creating the object first lets a (mocked) synchronous onPartial reach it.
+    const created = { controller, refs: 0, partial: null, listeners: new Set() } as unknown as Shared;
+    created.promise = loadWeather(place, {
+      airNowKey,
+      signal: controller.signal,
+      onPartial: (bundle) => {
+        created.partial = bundle;
+        for (const listener of [...created.listeners]) listener(bundle);
+      },
+    }).finally(() => {
+      if (inflight.get(key) === created) inflight.delete(key);
+    });
     created.promise.catch(() => undefined); // subscribers handle failures; this just prevents "unhandled rejection" after an abort
     inflight.set(key, created);
     shared = created;
   }
   const entry = shared;
   entry.refs += 1;
+  entry.listeners.add(onPartial);
+  if (entry.partial) onPartial(entry.partial);
 
   let released = false;
   return {
@@ -74,6 +87,7 @@ function acquire(place: Place, airNowKey: string | undefined): Subscription {
     release() {
       if (released) return;
       released = true;
+      entry.listeners.delete(onPartial);
       entry.refs -= 1;
       if (entry.refs > 0) return;
       setTimeout(() => {
@@ -152,7 +166,14 @@ export function useWeather(place: Place | null, opts: { airNowKey?: string } = {
 
     const run = (): void => {
       if (cancelled || subscription) return;
-      const sub = acquire(target, airNowKey);
+      const sub = acquire(target, airNowKey, (early) => {
+        // An early bundle (slow optional sources still out) is for a first load only: a refresh keeps the more
+        // complete data already on screen until the complete bundle arrives.
+        if (cancelled) return;
+        setState((prev) =>
+          prev.key === key && prev.bundle === null ? { key, bundle: early, status: 'ready', refreshing: true, error: null, fromCache: false } : prev,
+        );
+      });
       subscription = sub;
       setState((prev) => {
         if (prev.key !== key) return prev;
@@ -182,17 +203,23 @@ export function useWeather(place: Place | null, opts: { airNowKey?: string } = {
     };
 
     const visible = (): boolean => typeof document === 'undefined' || document.visibilityState === 'visible';
+    // navigator.onLine === false is reliable ("no network at all"); true only means "maybe". Automatic refreshes
+    // wait for the 'online' event instead of making a round of doomed requests (each retried) every 10 minutes.
+    const online = (): boolean => typeof navigator === 'undefined' || navigator.onLine !== false;
     const stale = (): boolean => latest === null || ageMs(latest) > STALE_AFTER_MS;
     const onVisibility = (): void => {
-      if (visible() && stale()) run();
+      if (visible() && online() && stale()) run();
     };
     const onOnline = (): void => {
-      if (stale()) run();
+      // Back on the network: refresh stale data, and also retry when the last refresh failed (fresh data or not,
+      // the "couldn't refresh" notice should not outlive the outage).
+      const failing = stateRef.current.key === key && stateRef.current.error !== null;
+      if (stale() || failing) run();
     };
 
     run();
     const timer = setInterval(() => {
-      if (visible()) run();
+      if (visible() && online()) run();
     }, REFRESH_INTERVAL_MS);
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
     if (typeof window !== 'undefined') window.addEventListener('online', onOnline);

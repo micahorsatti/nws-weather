@@ -6,7 +6,7 @@
  *   <RadarView lat={...} lon={...} alerts={bundle.alerts} onClose={...} />
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import 'leaflet/dist/leaflet.css';
 import './radar.css';
 import type { WeatherAlert } from '../../data/types';
@@ -24,6 +24,13 @@ export interface RadarViewProps {
   lon: number;
   alerts: WeatherAlert[];
   onClose: () => void;
+  /** IANA zone of the location: scan and alert times are shown in it, like every other time in the app (default: the device's). */
+  timeZone?: string;
+  /**
+   * Set while mounted to a function that closes an open alert popup and says whether there was one. The host's
+   * Back gesture calls it first, so Back dismisses the popup before it closes the radar, as Escape does.
+   */
+  dismissPopupRef?: RefObject<(() => boolean) | null>;
 }
 
 const NO_READY: ReadonlySet<string> = new Set();
@@ -54,7 +61,19 @@ function trapTab(event: KeyboardEvent, root: HTMLElement | null): void {
   }
 }
 
-export default function RadarView({ lat, lon, alerts, onClose }: RadarViewProps) {
+/** The zone if Intl accepts it, else undefined (the device zone): a bad zone name must not crash the radar. */
+function usableZone(timeZone: string | undefined): string | undefined {
+  if (!timeZone) return undefined;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+    return timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+export default function RadarView({ lat, lon, alerts, onClose, timeZone: zone, dismissPopupRef }: RadarViewProps) {
+  const timeZone = usableZone(zone);
   const theme = useTheme();
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const visible = useDocumentVisible();
@@ -93,6 +112,7 @@ export default function RadarView({ lat, lon, alerts, onClose }: RadarViewProps)
     theme,
     reducedMotion,
     onClose,
+    timeZone,
     reportFailure,
     currentId: current?.id,
     newestId: newest?.id,
@@ -108,6 +128,7 @@ export default function RadarView({ lat, lon, alerts, onClose }: RadarViewProps)
       lon: init.lon,
       theme: init.theme,
       reducedMotion: init.reducedMotion,
+      timeZone: init.timeZone,
       callbacks: {
         onReadyChange: (set) => {
           readyRef.current = set;
@@ -129,6 +150,15 @@ export default function RadarView({ lat, lon, alerts, onClose }: RadarViewProps)
       c.destroy();
     };
   }, [latest]);
+
+  // Let the host's Back gesture dismiss an open alert popup before it closes the radar.
+  useEffect(() => {
+    if (!dismissPopupRef) return;
+    dismissPopupRef.current = () => controllerRef.current?.closePopup() ?? false;
+    return () => {
+      dismissPopupRef.current = null;
+    };
+  }, [dismissPopupRef]);
 
   // Frames first, so that when the location moves to another region the old region's layers are gone
   // before the map moves (otherwise they would fetch a screenful of tiles for the new view).
@@ -235,7 +265,7 @@ export default function RadarView({ lat, lon, alerts, onClose }: RadarViewProps)
 
   // --- labels ------------------------------------------------------------------------------------------
   const loadedCount = frames.reduce((n, f) => n + (ready.has(f.id) ? 1 : 0), 0);
-  const timeLabel = current ? `${current.approximate ? '~' : ''}${formatClock(current.time)}` : status === 'loading' ? 'Loading…' : '—';
+  const timeLabel = current ? `${current.approximate ? '~' : ''}${formatClock(current.time, { locale: 'en-US', timeZone })}` : status === 'loading' ? 'Loading…' : '—';
   const ageLabel = current ? formatAge(minutesAgo(current.time, now), current.approximate) : '';
   const regionLabel = source?.kind === 'mesonet' ? 'Backup source' : (source?.kind === 'wms' ? source.region : region)?.label ?? '';
   const usingBackup = source?.kind === 'mesonet';

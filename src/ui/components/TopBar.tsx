@@ -18,11 +18,15 @@ export function TopBar({ title, updatedLabel, updatedTitle, refreshing, onOpenPl
       <div className="topbar__inner">
         <div className="topbar__place">
           {title ? (
-            <button type="button" className="place-btn" onClick={onOpenPlaces} aria-haspopup="dialog" aria-label={`${title}. Change place`}>
-              <IconPin size={18} className="place-btn__pin" />
-              <span className="place-btn__name">{title}</span>
-              <IconChevronDown size={18} />
-            </button>
+            <>
+              {/* The page's one top-level heading, for screen reader users who navigate by headings. */}
+              <h1 className="sr-only">Weather for {title}</h1>
+              <button type="button" className="place-btn" onClick={onOpenPlaces} aria-haspopup="dialog" aria-label={`${title}. Change place`}>
+                <IconPin size={18} className="place-btn__pin" />
+                <span className="place-btn__name">{title}</span>
+                <IconChevronDown size={18} />
+              </button>
+            </>
           ) : (
             <h1 className="topbar__app">NWS Weather</h1>
           )}

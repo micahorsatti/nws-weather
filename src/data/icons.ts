@@ -324,6 +324,27 @@ export function describeIcon(icon: WxIcon, isDaytime = true): string {
   }
 }
 
+/**
+ * NWS words a clear-ish sky differently by day and night ("Sunny" / "Clear", "Mostly Sunny" / "Mostly Clear",
+ * "Partly Sunny" / "Partly Cloudy"), but decides which by the 6 AM - 6 PM clock, not the sun. Re-word such a
+ * phrase for the actual daylight so the text agrees with the sun or moon icon; anything else is returned as is.
+ */
+export function matchSkyWording(text: string, isDaytime: boolean): string {
+  switch (text.trim().toLowerCase()) {
+    case 'sunny':
+    case 'clear':
+      return isDaytime ? 'Sunny' : 'Clear';
+    case 'mostly sunny':
+    case 'mostly clear':
+      return isDaytime ? 'Mostly Sunny' : 'Mostly Clear';
+    case 'partly sunny':
+    case 'partly cloudy':
+      return isDaytime ? 'Partly Sunny' : 'Partly Cloudy';
+    default:
+      return text;
+  }
+}
+
 /** Description for a WMO weather code (daytime wording by default). */
 export function describeWmo(code: number | null | undefined, isDaytime = true): string {
   if (typeof code !== 'number' || !Number.isFinite(code)) return '';

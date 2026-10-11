@@ -370,3 +370,61 @@ describe('when the NWS period forecast is unavailable', () => {
     expect(daily).toHaveLength(10);
   });
 });
+
+describe('around the end of daylight time (Chicago, Sunday 2026-11-01 is 25 hours long)', () => {
+  const today = '2026-10-31';
+  const now = zonedWallToMs(today, 15, 0, TZ);
+  const run = (over: Partial<Parameters<typeof buildDaily>[0]> = {}) =>
+    buildDaily({ now, timeZone: TZ, lat: LAT, lon: LON, periods: makePeriods('afternoon', today, TZ), series: [], grid: null, gfs: gfsDays(today, 11), airForecast: [], ...over });
+
+  it('lists ten consecutive local dates with no gap or repeat, seven from NWS and three from GFS', () => {
+    const days = run();
+    expect(days.map((d) => d.date)).toEqual(Array.from({ length: 10 }, (_, i) => addDays(today, i)));
+    expect(days[1].date).toBe('2026-11-01');
+    expect(days.map((d) => d.source)).toEqual([...Array(7).fill('nws'), ...Array(3).fill('gfs')]);
+    // The clock change leaves each date with exactly one day and one night period.
+    for (const d of days.slice(1, 7)) expect([d.day?.name, d.night?.name]).toEqual([expect.any(String), expect.stringContaining('Night')]);
+  });
+
+  it('counts all 25 hours of the long day and none of the next date', () => {
+    const hours25 = hourRun('2026-11-01', 0, 25, TZ, () => ({ precipMm: 1, windKph: 10, feelsLikeC: 5 }));
+    expect(hours25).toHaveLength(25);
+    expect(run({ series: hours25 })[1].precipMm).toBe(25);
+    // 25 points is 100% coverage of the 25-hour day, not 104% of a 24-hour one.
+    const spillover = hourRun('2026-11-01', 0, 26, TZ, () => ({ precipMm: 1 })); // the 26th point is 00:00 CST on Nov 2
+    const days = run({ series: spillover });
+    expect(days[1].precipMm).toBe(25);
+    expect(days[2].precipMm).toBe(gfsDays(today, 11)[2].precipMm); // one hour of Nov 2 is not enough coverage: GFS number
+  });
+
+  it('puts the hour after 00:00 CST on the next date, and the first hour (00:00 CDT) on the long day', () => {
+    const series = [
+      ...hourRun('2026-10-31', 22, 2, TZ, () => ({ precipMm: 2 })), // 22:00 and 23:00 CDT on the 31st
+      ...hourRun('2026-11-01', 0, 25, TZ, (i) => ({ precipMm: i === 0 ? 7 : 0 })),
+      ...hourRun('2026-11-02', 0, 1, TZ, () => ({ precipMm: 3 })),
+    ];
+    const days = run({ series, gfs: [] });
+    expect(days[1].precipMm).toBe(7);
+    expect(days[0].precipMm).toBe(4); // only the two late hours of the 31st are in the series (partial data is better than none)
+    expect(days[2].precipMm).toBe(3);
+  });
+
+  it('sunrise and sunset move by the clock hour the night the clocks go back', () => {
+    const [d31, d1] = run();
+    const hourOf = (iso: string | null) => Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', hourCycle: 'h23' }).format(Date.parse(iso ?? '')));
+    // Linn: about 7:5x AM / 6:2x PM CDT on the 31st, about 6:5x AM / 5:2x PM CST the next day.
+    expect([hourOf(d31.sunrise), hourOf(d31.sunset)]).toEqual([7, 18]);
+    expect([hourOf(d1.sunrise), hourOf(d1.sunset)]).toEqual([6, 17]);
+  });
+
+  it('the day and night windows for "Feels like" follow the 12-hour periods through the 13-hour night before the change', () => {
+    // "Saturday Night" (6 PM CDT Oct 31 - 6 AM CST Nov 1) is 13 hours long: build it by hand.
+    const periods = makePeriods('afternoon', today, TZ);
+    const sat = periods.find((p) => p.name === 'Saturday Night' || p.name === 'Tonight')!;
+    const start = Date.parse(sat.startTime);
+    sat.endTime = new Date(start + 13 * HOUR_MS).toISOString().replace('.000', '');
+    const series = hourRun('2026-10-31', 18, 13, TZ, (i) => ({ feelsLikeC: 10 - i })); // coldest at the 13th hour, 05:00 CST
+    const days = run({ periods, series });
+    expect(days[0].feelsLikeLowC).toBe(-2);
+  });
+});

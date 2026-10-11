@@ -30,9 +30,11 @@ export interface RadarCardProps {
   lat: number;
   lon: number;
   alerts: WeatherAlert[];
+  /** The location's IANA zone, for the times shown on the radar. */
+  timeZone?: string;
 }
 
-export function RadarCard({ lat, lon, alerts }: RadarCardProps) {
+export function RadarCard({ lat, lon, alerts, timeZone }: RadarCardProps) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -44,7 +46,7 @@ export function RadarCard({ lat, lon, alerts }: RadarCardProps) {
         </span>
         <IconChevronRight size={20} className="radar-card__chev" />
       </button>
-      {open ? <RadarHost lat={lat} lon={lon} alerts={alerts} onClose={() => setOpen(false)} /> : null}
+      {open ? <RadarHost lat={lat} lon={lon} alerts={alerts} timeZone={timeZone} onClose={() => setOpen(false)} /> : null}
     </>
   );
 }
@@ -54,14 +56,16 @@ export function RadarCard({ lat, lon, alerts }: RadarCardProps) {
  * trap), so this adds only what it can't: lock the page behind it, Back closes it, a loading/failure state,
  * and returning focus to the button that opened it.
  */
-function RadarHost({ lat, lon, alerts, onClose }: RadarCardProps & { onClose: () => void }) {
+function RadarHost({ lat, lon, alerts, timeZone, onClose }: RadarCardProps & { onClose: () => void }) {
   usePageLock();
   useRestoreFocus();
-  useBackToClose(onClose);
+  // Back dismisses an open alert popup before it closes the radar (the same order as Escape).
+  const dismissPopup = useRef<(() => boolean) | null>(null);
+  useBackToClose(onClose, () => dismissPopup.current?.() ?? false);
   return createPortal(
     <RadarBoundary onClose={onClose}>
       <Suspense fallback={<RadarMessage title="Loading radar…" busy onClose={onClose} />}>
-        <RadarView lat={lat} lon={lon} alerts={alerts} onClose={onClose} />
+        <RadarView lat={lat} lon={lon} alerts={alerts} onClose={onClose} timeZone={timeZone} dismissPopupRef={dismissPopup} />
       </Suspense>
     </RadarBoundary>,
     document.body,
@@ -69,7 +73,19 @@ function RadarHost({ lat, lon, alerts, onClose }: RadarCardProps & { onClose: ()
 }
 
 /** Full-screen stand-in while the radar chunk loads, or when it can't. Has its own Close button and Escape. */
-function RadarMessage({ title, busy, detail, onClose }: { title: string; busy?: boolean; detail?: string; onClose: () => void }) {
+function RadarMessage({
+  title,
+  busy,
+  detail,
+  onClose,
+  onReload,
+}: {
+  title: string;
+  busy?: boolean;
+  detail?: string;
+  onClose: () => void;
+  onReload?: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
@@ -85,6 +101,11 @@ function RadarMessage({ title, busy, detail, onClose }: { title: string; busy?: 
         {busy ? <span className="spinner spinner--lg" aria-hidden="true" /> : null}
         <p className="radar-message__title">{title}</p>
         {detail ? <p className="muted">{detail}</p> : null}
+        {onReload ? (
+          <button type="button" className="btn btn--primary" onClick={onReload}>
+            Reload the app
+          </button>
+        ) : null}
         <button type="button" className="btn" onClick={onClose}>
           <IconClose size={16} /> Close
         </button>
@@ -103,7 +124,15 @@ class RadarBoundary extends Component<{ children: ReactNode; onClose: () => void
   }
   render() {
     if (this.state.failed) {
-      return <RadarMessage title="Radar couldn’t load." detail="Check your connection and try again." onClose={this.props.onClose} />;
+      // Also what an app left open across a deploy sees (its old radar chunk is gone): a reload fixes both.
+      return (
+        <RadarMessage
+          title="Radar couldn’t load."
+          detail="Check your connection, then reload the app to try again."
+          onClose={this.props.onClose}
+          onReload={() => window.location.reload()}
+        />
+      );
     }
     return this.props.children;
   }

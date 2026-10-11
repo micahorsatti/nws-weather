@@ -30,7 +30,7 @@ Static site only — no server. Hosted on GitHub Pages at `https://micahorsatti.
 | Point metadata, 7-day day/night periods + forecaster text, hourly, raw grid layers, observations, alerts, AFD | `api.weather.gov` |
 | Days 8–10 (extended outlook), hourly UV | Open-Meteo GFS `api.open-meteo.com/v1/gfs` (NOAA GFS model) |
 | Hourly US AQI forecast; AQI fallback | Open-Meteo `air-quality-api.open-meteo.com/v1/air-quality` |
-| Current AQI + daily AQI forecast (official) | EPA AirNow `www.airnowapi.org` — needs the user's free key, entered in Settings, stored only in localStorage |
+| Current AQI + daily AQI forecast (official) | EPA AirNow `www.airnowapi.org/aq/observation/current/ziplatlong/` and `/aq/forecast/current/` (the old `latLong` services were retired 2026-09-30 and answer 410) — needs the user's free key, entered in Settings, stored only in localStorage |
 | Place search (city or ZIP) | Open-Meteo geocoding `geocoding-api.open-meteo.com/v1/search?countryCode=US` |
 | Radar | NWS MRMS WMS `opengeo.ncep.noaa.gov/geoserver/{conus,alaska,hawaii,carib,guam}/..._bref_qcd/ows` (TIME dimension) |
 | Basemap | Esri Light/Dark Gray Canvas `server.arcgisonline.com/ArcGIS/rest/services/Canvas/...` (key-less; CARTO now requires a key). Attribution: Esri, HERE, Garmin, © OpenStreetMap contributors, and the GIS user community |
@@ -48,3 +48,6 @@ Static site only — no server. Hosted on GitHub Pages at `https://micahorsatti.
 - No new runtime dependencies without a strong reason (bundle size matters for a PWA).
 - The repo lives in OneDrive: if a file operation fails with EBUSY/EPERM, wait a moment and retry.
 - AI daily synopsis (Claude Haiku 5.5) is deferred to a later phase; it will need a server-side key proxy.
+- GitHub Pages serves every project site of the account from one origin (`micahorsatti.github.io`), so
+  localStorage and Cache Storage are shared with the owner's other Pages sites: only touch keys prefixed
+  `nws-weather:` / `nwsw.` and the `basemap-tiles` cache. The AirNow key lives in that shared localStorage.

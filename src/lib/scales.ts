@@ -1,7 +1,7 @@
 /**
  * Official category scales for AQI (US EPA) and UV index (WHO/EPA), with their standard colors.
  * The official colors are low-contrast against white text; use them for swatches, bars and dots,
- * and pick text color with `onColor`.
+ * and pick text color with `onColor` (every pair reaches WCAG AA 4.5:1: see scales.test.ts).
  */
 
 export type AqiCategory = 'good' | 'moderate' | 'usg' | 'unhealthy' | 'very-unhealthy' | 'hazardous';
@@ -23,7 +23,7 @@ export const AQI_INFO: Record<AqiCategory, { label: string; color: string; onCol
   unhealthy: {
     label: 'Unhealthy',
     color: '#ff0000',
-    onColor: '#ffffff',
+    onColor: '#2b0000',
     advice: 'Everyone should reduce prolonged or heavy outdoor exertion.',
   },
   'very-unhealthy': {
@@ -53,11 +53,11 @@ export function aqiCategoryFromNumber(n: number): AqiCategory | null {
 export type UvCategory = 'low' | 'moderate' | 'high' | 'very-high' | 'extreme';
 
 export const UV_INFO: Record<UvCategory, { label: string; color: string; onColor: string; advice: string }> = {
-  low: { label: 'Low', color: '#3ea72d', onColor: '#ffffff', advice: 'No protection needed for most people.' },
+  low: { label: 'Low', color: '#3ea72d', onColor: '#06260a', advice: 'No protection needed for most people.' },
   moderate: { label: 'Moderate', color: '#fff300', onColor: '#3d3a00', advice: 'Wear sunscreen; seek shade around midday.' },
   high: { label: 'High', color: '#f18b00', onColor: '#3a2100', advice: 'Sunscreen, hat and sunglasses; reduce midday sun.' },
-  'very-high': { label: 'Very High', color: '#e53210', onColor: '#ffffff', advice: 'Extra protection; avoid sun 10 a.m.–4 p.m.' },
-  extreme: { label: 'Extreme', color: '#b567a4', onColor: '#ffffff', advice: 'Take all precautions; unprotected skin burns in minutes.' },
+  'very-high': { label: 'Very High', color: '#e53210', onColor: '#140300', advice: 'Extra protection; avoid sun 10 a.m.–4 p.m.' },
+  extreme: { label: 'Extreme', color: '#b567a4', onColor: '#1f0a1c', advice: 'Take all precautions; unprotected skin burns in minutes.' },
 };
 
 export function uvCategory(uv: number): UvCategory {

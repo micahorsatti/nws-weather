@@ -1,27 +1,28 @@
-import { PLACES_KEY } from './places';
-import { SETTINGS_KEY } from './settings';
+import { CACHE_NAMESPACE, clearAllCaches } from '../data';
 import { safeKeys, safeRemove } from './storage';
 
-/** Everything the UI itself owns in localStorage; "Clear cached data" never touches these. */
-const KEEP = new Set([SETTINGS_KEY, PLACES_KEY]);
-
-/** Cache Storage entries holding re-downloadable map tiles (the app shell's precache must survive for offline start). */
-const TILE_CACHES = /basemap/i;
+/**
+ * The Workbox runtime cache of Esri basemap tiles (see vite.config.ts): re-downloadable map images. The app
+ * shell's precache must survive so the app still starts offline.
+ */
+const TILE_CACHE = 'basemap-tiles';
 
 /**
- * Forget saved forecasts, NWS point metadata and radar/map caches. The user's settings, AirNow key and
- * saved places are kept. Other localStorage keys belong to the data and radar layers (all caches).
+ * Forget saved forecasts, NWS point metadata and cached map tiles. The user's settings, AirNow key and saved
+ * places (keys under "nwsw.") are kept.
+ *
+ * GitHub Pages serves every project site of an account from one origin (micahorsatti.github.io), so
+ * localStorage and Cache Storage are shared with those other sites. Only what this app wrote is removed:
+ * keys under the data layer's "nws-weather:" namespace (including any left by older cache versions) and
+ * the one tile cache by its exact name. Never "everything except my settings".
  */
 export async function clearCachedData(): Promise<void> {
+  clearAllCaches(); // the in-memory copies the data layer keeps when storage is full or blocked
   for (const key of safeKeys()) {
-    if (!KEEP.has(key)) safeRemove(key);
+    if (key.startsWith(CACHE_NAMESPACE)) safeRemove(key);
   }
   try {
-    if (typeof caches !== 'undefined') {
-      for (const name of await caches.keys()) {
-        if (TILE_CACHES.test(name)) await caches.delete(name);
-      }
-    }
+    if (typeof caches !== 'undefined') await caches.delete(TILE_CACHE);
   } catch {
     /* Cache Storage can be unavailable (insecure context, private mode); nothing else to do. */
   }

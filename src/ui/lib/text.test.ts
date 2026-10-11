@@ -56,6 +56,9 @@ describe('describeProblems', () => {
     expect(describeProblems([])).toBeNull();
     expect(describeProblems([{ source: 'open-meteo-uv', message: 'x' }, { source: 'open-meteo-aqi', message: 'y' }])).toBe('UV and air quality temporarily unavailable');
     expect(describeProblems([{ source: 'airnow', message: 'x' }, { source: 'open-meteo-aqi', message: 'y' }])).toBe('Air quality temporarily unavailable');
+    // AirNow alone: Open-Meteo's estimate still fills the tile, so air quality as a whole is not unavailable.
+    expect(describeProblems([{ source: 'airnow', message: 'x' }])).toBe('Official AirNow readings temporarily unavailable');
+    expect(describeProblems([{ source: 'airnow', message: 'x' }, { source: 'open-meteo-uv', message: 'y' }])).toBe('Official AirNow readings and UV temporarily unavailable');
     expect(describeProblems([{ source: 'nws-alerts', message: 'x' }, { source: 'open-meteo-gfs', message: 'y' }, { source: 'open-meteo-uv', message: 'z' }])).toBe(
       'Weather alerts, the extended outlook, and UV temporarily unavailable',
     );

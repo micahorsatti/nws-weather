@@ -4,6 +4,7 @@
  * it and lets the test decide when tiles are "loaded". Leaflet itself is checked in the browser harness.
  */
 import { StrictMode } from 'react';
+import type { RefObject } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WeatherAlert } from '../../data/types';
@@ -20,7 +21,7 @@ interface FakeFrame {
   time: number;
 }
 interface FakeInstance {
-  options: { lat: number; lon: number; theme: string; reducedMotion: boolean; callbacks: FakeCallbacks };
+  options: { lat: number; lon: number; theme: string; reducedMotion: boolean; timeZone?: string; callbacks: FakeCallbacks };
   destroyed: boolean;
   popupOpen: boolean;
   source: { kind: string } | null;
@@ -134,10 +135,17 @@ interface Mounted {
 
 /** Render the view and let the frame list load. */
 async function mount(
-  props: { lat?: number; lon?: number; alerts?: WeatherAlert[]; strict?: boolean } = {},
+  props: { lat?: number; lon?: number; alerts?: WeatherAlert[]; strict?: boolean; timeZone?: string; dismissPopupRef?: RefObject<(() => boolean) | null> } = {},
 ): Promise<Mounted> {
   const onClose = vi.fn();
-  const base = { lat: props.lat ?? LINN.lat, lon: props.lon ?? LINN.lon, alerts: props.alerts ?? [], onClose };
+  const base = {
+    lat: props.lat ?? LINN.lat,
+    lon: props.lon ?? LINN.lon,
+    alerts: props.alerts ?? [],
+    onClose,
+    timeZone: props.timeZone,
+    dismissPopupRef: props.dismissPopupRef,
+  };
   const ui = (p: typeof base) => <RadarView {...p} />;
   const wrap = (node: React.ReactNode) => (props.strict ? <StrictMode>{node}</StrictMode> : node);
   const view = render(wrap(ui(base)));
@@ -205,6 +213,41 @@ describe('RadarView: dialog', () => {
     expect(live().popupOpen).toBe(false);
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands its host a function that closes an open alert popup, so the Back gesture can dismiss it before the radar', async () => {
+    const dismissPopupRef: RefObject<(() => boolean) | null> = { current: null };
+    const { onClose, unmount } = await mount({ dismissPopupRef });
+    expect(typeof dismissPopupRef.current).toBe('function');
+    expect(dismissPopupRef.current?.()).toBe(false); // no popup: the host should close the radar
+    live().popupOpen = true;
+    expect(dismissPopupRef.current?.()).toBe(true); // popup closed; the radar stays
+    expect(live().popupOpen).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+    unmount();
+    expect(dismissPopupRef.current).toBeNull(); // nothing left pointing at a destroyed map
+  });
+
+  it('shows scan times in the time zone of the location (like every other time in the app), in en-US form, not the device zone', async () => {
+    const label = () => document.querySelector('.rv-time-main')?.textContent ?? '';
+    const expected = (timeZone: string) =>
+      new Intl.DateTimeFormat('en-US', { timeStyle: 'short', timeZone }).format(live().frames.at(-1)!.time);
+
+    const honolulu = await mount({ timeZone: 'Pacific/Honolulu' });
+    expect(live().options.timeZone).toBe('Pacific/Honolulu'); // alert popups use it too
+    expect(label()).toBe(expected('Pacific/Honolulu'));
+    honolulu.unmount();
+    cleanup();
+
+    await mount({ timeZone: 'Asia/Kolkata' });
+    expect(label()).toBe(expected('Asia/Kolkata'));
+    expect(label()).not.toBe(expected('Pacific/Honolulu'));
+  });
+
+  it('survives an unusable zone name by falling back to the device zone', async () => {
+    await mount({ timeZone: 'Not/AZone' });
+    expect(live().options.timeZone).toBeUndefined();
+    expect(document.querySelector('.rv-time-main')?.textContent).toMatch(/\d/);
   });
 
   it('keeps Tab inside the dialog', async () => {

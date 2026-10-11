@@ -42,17 +42,25 @@ function setVisibility(state: 'visible' | 'hidden'): void {
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
 }
 
+function setOnline(online: boolean): void {
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   loadMock.mockReset();
   localStorage.clear();
   clearAllCaches();
   setVisibility('visible');
+  setOnline(true);
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.useRealTimers();
+  // The hook's shared in-flight requests are module state, released a tick after unmount: let that happen before the
+  // next test starts, so a request one test left behind can never be joined by the next test's mount.
+  await new Promise((resolve) => setTimeout(resolve, 2));
 });
 
 describe('useWeather', () => {
@@ -310,6 +318,128 @@ describe('useWeather', () => {
     });
   });
 
+  describe('early bundles (slow optional sources)', () => {
+    // loadWeather hands over an early bundle (no observation, UV, GFS days ...) when optional sources are slow.
+    const earlyBundle = () => bundleFor(LINN, '2026-10-09T03:00:00.000Z');
+    const completeBundle = () => bundleFor(LINN, '2026-10-09T03:00:08.000Z');
+
+    it('shows it on a first load while the complete bundle is pending, without caching it, then swaps in the complete one', async () => {
+      const early = earlyBundle();
+      const complete = completeBundle();
+      const d = deferred<WeatherBundle>();
+      loadMock.mockImplementation(async (_place, opts) => {
+        await Promise.resolve();
+        opts?.onPartial?.(early);
+        return d.promise;
+      });
+      const { result } = renderHook(() => useWeather(LINN));
+      expect(result.current).toMatchObject({ bundle: null, status: 'loading' });
+      await flush();
+      expect(result.current.bundle).toBe(early);
+      expect(result.current).toMatchObject({ status: 'ready', refreshing: true, fromCache: false, error: null });
+      expect(loadCachedBundle(LINN.id)).toBeNull(); // only the complete bundle is saved
+
+      await act(async () => {
+        d.resolve(complete);
+        await d.promise;
+      });
+      expect(result.current.bundle).toBe(complete);
+      expect(result.current).toMatchObject({ status: 'ready', refreshing: false, fromCache: false });
+      expect(loadCachedBundle(LINN.id)).toEqual(complete);
+    });
+
+    it('keeps the cached bundle on screen during a refresh rather than swapping in a poorer early one', async () => {
+      const cached = bundleFor(LINN, '2026-10-09T00:00:00.000Z');
+      saveBundle(cached);
+      const early = earlyBundle();
+      const complete = completeBundle();
+      const d = deferred<WeatherBundle>();
+      loadMock.mockImplementation(async (_place, opts) => {
+        await Promise.resolve();
+        opts?.onPartial?.(early);
+        return d.promise;
+      });
+      const { result } = renderHook(() => useWeather(LINN));
+      await flush();
+      expect(result.current.bundle).toEqual(cached); // restored from the cache (a copy), not replaced by the early bundle
+      expect(result.current).toMatchObject({ fromCache: true, refreshing: true });
+      await act(async () => {
+        d.resolve(complete);
+        await d.promise;
+      });
+      expect(result.current.bundle).toBe(complete);
+    });
+
+    it('keeps the bundle of a previous load on screen during a manual refresh', async () => {
+      const first = bundleFor(LINN, '2026-10-09T03:00:00.000Z');
+      const early = earlyBundle();
+      const d = deferred<WeatherBundle>();
+      loadMock.mockResolvedValueOnce(first).mockImplementationOnce(async (_place, opts) => {
+        await Promise.resolve();
+        opts?.onPartial?.(early);
+        return d.promise;
+      });
+      const { result } = renderHook(() => useWeather(LINN));
+      await flush();
+      expect(result.current.bundle).toBe(first);
+      act(() => result.current.refresh());
+      await flush();
+      expect(result.current.bundle).toBe(first);
+      expect(result.current.refreshing).toBe(true);
+      await act(async () => {
+        d.resolve(completeBundle());
+        await d.promise;
+      });
+      expect(result.current.refreshing).toBe(false);
+    });
+
+    it('reaches the surviving subscriber under StrictMode, even when the loader hands it over synchronously', async () => {
+      const wrapper = ({ children }: { children: ReactNode }): ReactNode => <StrictMode>{children}</StrictMode>;
+      const early = earlyBundle();
+      const d = deferred<WeatherBundle>();
+      // Called before loadWeather has even returned: the first subscriber has not joined yet, so it is replayed.
+      loadMock.mockImplementation((_place, opts) => {
+        opts?.onPartial?.(early);
+        return d.promise;
+      });
+      const { result } = renderHook(() => useWeather(LINN), { wrapper });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 5));
+      });
+      expect(loadMock).toHaveBeenCalledTimes(1);
+      expect(result.current.bundle).toBe(early);
+      expect(result.current).toMatchObject({ status: 'ready', refreshing: true });
+      await act(async () => {
+        d.resolve(completeBundle());
+        await d.promise;
+      });
+      expect(result.current).toMatchObject({ status: 'ready', refreshing: false });
+    });
+
+    it('ignores an early bundle that arrives after the place was switched', async () => {
+      let lateEarly: ((b: WeatherBundle) => void) | undefined;
+      const lateLinn = deferred<WeatherBundle>();
+      loadMock.mockImplementationOnce((_place, opts) => {
+        lateEarly = opts?.onPartial;
+        return lateLinn.promise;
+      });
+      loadMock.mockResolvedValueOnce(bundleFor(PHX));
+      const { result, rerender } = renderHook(({ place }: { place: Place }) => useWeather(place), { initialProps: { place: LINN } });
+      await flush();
+      rerender({ place: PHX });
+      await flush();
+      expect(result.current.bundle?.place.id).toBe(PHX.id);
+      act(() => lateEarly?.(earlyBundle())); // Linn's slow sources answer after the switch
+      expect(result.current.bundle?.place.id).toBe(PHX.id);
+      // Let Linn's request finish too, so no pending request outlives the test (the in-flight map is module state).
+      await act(async () => {
+        lateLinn.resolve(bundleFor(LINN));
+        await lateLinn.promise;
+      });
+      expect(result.current.bundle?.place.id).toBe(PHX.id);
+    });
+  });
+
   describe('AirNow key changes', () => {
     it('refetches in place, keeping the data on screen', async () => {
       const first = bundleFor(LINN);
@@ -439,6 +569,64 @@ describe('useWeather', () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(loadMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('makes no automatic attempts while the browser is offline, and catches up when it comes back', async () => {
+      vi.useFakeTimers();
+      loadMock.mockImplementation(async () => bundleFor(LINN, new Date(Date.now()).toISOString()));
+      renderHook(() => useWeather(LINN));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(loadMock).toHaveBeenCalledTimes(1);
+
+      setOnline(false);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(REFRESH_INTERVAL_MS * 3); // three timer ticks, none of which may fetch
+        document.dispatchEvent(new Event('visibilitychange')); // nor may coming back to the foreground
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(loadMock).toHaveBeenCalledTimes(1);
+
+      setOnline(true);
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(loadMock).toHaveBeenCalledTimes(2); // the data is half an hour old by now
+    });
+
+    it('a manual refresh still tries while the browser says it is offline', async () => {
+      loadMock.mockImplementation(async () => bundleFor(LINN));
+      const { result } = renderHook(() => useWeather(LINN));
+      await flush();
+      setOnline(false);
+      act(() => result.current.refresh());
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries when the browser comes back online after a failed refresh, even though the data is fresh', async () => {
+      vi.useFakeTimers();
+      const fresh = () => bundleFor(LINN, new Date(Date.now()).toISOString());
+      loadMock.mockResolvedValueOnce(fresh()).mockRejectedValueOnce(new WeatherLoadError('network', 'offline')).mockImplementation(async () => fresh());
+      const { result } = renderHook(() => useWeather(LINN));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      act(() => result.current.refresh());
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current).toMatchObject({ status: 'ready', refreshing: false });
+      expect(result.current.error).not.toBeNull(); // the refresh failed; the bundle stays on screen
+
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(loadMock).toHaveBeenCalledTimes(3);
+      expect(result.current.error).toBeNull();
     });
 
     it('retries on return to the foreground after a failed first load, whatever the age', async () => {

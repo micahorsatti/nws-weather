@@ -21,15 +21,17 @@ function joinWords(words: string[]): string {
 }
 
 /**
- * "UV and air quality temporarily unavailable". Open-Meteo AQI and AirNow failures are folded into one
- * "air quality" mention. Returns null when nothing is wrong.
+ * "UV and air quality temporarily unavailable". An AirNow failure alone is only about the *official* readings
+ * (Open-Meteo's estimate still fills the air quality tile), so it is named as such; when the Open-Meteo air
+ * quality failed too, the two are one "air quality" mention. Returns null when nothing is wrong.
  */
 export function describeProblems(problems: readonly SourceProblem[]): string | null {
   if (problems.length === 0) return null;
+  const modelAirFailed = problems.some((p) => p.source === 'open-meteo-aqi');
   const groups: string[] = [];
   for (const p of problems) {
     const g = SOURCE_WORDS[p.source]?.group ?? 'some data';
-    const merged = g === 'official AirNow readings' ? 'air quality' : g;
+    const merged = g === 'official AirNow readings' && modelAirFailed ? 'air quality' : g;
     if (!groups.includes(merged)) groups.push(merged);
   }
   const text = joinWords(groups);

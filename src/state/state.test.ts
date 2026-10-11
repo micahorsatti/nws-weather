@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadCachedBundle, saveBundle } from '../data/cache';
+import { makeBundle } from '../data/testing/builders';
 import { GPS_PLACE_ID, placeIdFor } from '../data/types';
 import type { Place } from '../data/types';
 import { clearCachedData } from './cache';
@@ -242,5 +244,67 @@ describe('clearCachedData', () => {
     expect(localStorage.getItem(SETTINGS_KEY)).toContain('SECRET-KEY-VALUE');
     expect(placesStore.get().selected).toEqual(LINN);
     expect(localStorage.getItem(PLACES_KEY)).not.toBeNull();
+  });
+
+  // GitHub Pages serves every project site of an account from one origin (micahorsatti.github.io), so
+  // localStorage and Cache Storage are shared with the owner's other sites.
+  describe('on an origin shared with other sites', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('removes only this app\'s keys and its tile cache, never another site\'s data or caches', async () => {
+      const theirs: Record<string, string> = {
+        'other-app:state': '{"a":1}',
+        theme: 'dark',
+        settings: '{"units":"metric"}',
+        token: 'abc',
+        'nws-weatherX:bundle': 'looks similar but is not ours',
+        'my-nws-weather:b': 'neither is this',
+      };
+      for (const [k, v] of Object.entries(theirs)) localStorage.setItem(k, v);
+      updateSettings({ airNowKey: 'SECRET-KEY-VALUE' });
+      localStorage.setItem('nws-weather:bundle:v1:1,2', '{"v":1}');
+      localStorage.setItem('nws-weather:point:v1:1,2', '{"v":1}');
+      localStorage.setItem('nws-weather:bundle:v0:old', '{}'); // left by an older version of this app
+      const deleted: string[] = [];
+      vi.stubGlobal('caches', {
+        keys: async () => ['basemap-tiles', 'workbox-precache-v2-https://micahorsatti.github.io/nws-weather/', 'other-site-basemap-tiles', 'their-cache'],
+        delete: async (name: string) => {
+          deleted.push(name);
+          return true;
+        },
+      });
+
+      await clearCachedData();
+
+      for (const [k, v] of Object.entries(theirs)) expect(localStorage.getItem(k), k).toBe(v);
+      expect(safeKeys().filter((k) => k.startsWith('nws-weather:'))).toEqual([]);
+      expect(localStorage.getItem(SETTINGS_KEY)).toContain('SECRET-KEY-VALUE');
+      // The tile cache goes; the app shell's precache and other sites' caches stay.
+      expect(deleted).toEqual(['basemap-tiles']);
+    });
+
+    it('also forgets the copies the data layer keeps in memory when storage refuses writes', async () => {
+      const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new DOMException('full', 'QuotaExceededError');
+      });
+      saveBundle(makeBundle({ id: '1,2', lat: 1, lon: 2 }));
+      setItem.mockRestore();
+      expect(loadCachedBundle('1,2')).not.toBeNull();
+      await clearCachedData();
+      expect(loadCachedBundle('1,2')).toBeNull();
+    });
+
+    it('does not fail where Cache Storage is missing or throws', async () => {
+      vi.stubGlobal('caches', {
+        delete: async () => {
+          throw new Error('SecurityError');
+        },
+      });
+      await expect(clearCachedData()).resolves.toBeUndefined();
+      vi.stubGlobal('caches', undefined);
+      await expect(clearCachedData()).resolves.toBeUndefined();
+    });
   });
 });

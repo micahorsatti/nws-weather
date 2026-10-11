@@ -137,6 +137,33 @@ describe('AirNow current observations', () => {
     expect((err as Error).message).toBe('Hourly request limit reached for ….');
     expect(describeAirNowFailure(err)).toBe('AirNow: Hourly request limit reached for ….');
   });
+
+  it('does not mistake a request limit for a rejected key (the user would replace a good key), but still catches "invalid key" wording', () => {
+    const body = (Message: string) => ({ WebServiceError: [{ Message }] });
+    for (const message of [
+      'Hourly request limit reached for this API key.',
+      'Your API key has exceeded its quota.',
+      'Too many requests for this key.',
+      'Rate limit exceeded for key',
+    ]) {
+      expect(() => parseAirNowCurrent(body(message), 'America/Chicago', FALLBACK_ISO), message).toThrow(AirNowServiceError);
+      expect(() => parseAirNowForecast(body(message)), message).toThrow(AirNowServiceError);
+    }
+    for (const message of ['Invalid API key. Please generate a new key.', 'API key is expired', 'The API key is not authorized for this service']) {
+      expect(() => parseAirNowCurrent(body(message), 'America/Chicago', FALLBACK_ISO), message).toThrow(AirNowKeyError);
+    }
+  });
+
+  it('reports an answer that has content but no AQI field as unreadable, not as "no monitor nearby"', () => {
+    for (const body of [{ observations: [{ aqiValue: 5 }] }, [{ foo: 1 }], ['just text'], { status: 'ok' }]) {
+      expect(() => parseAirNowCurrent(body, 'America/Chicago', FALLBACK_ISO), JSON.stringify(body)).toThrow(AirNowServiceError);
+    }
+    // Empty answers and monitors whose AQI is unknown right now are normal, and quiet.
+    expect(parseAirNowCurrent([], 'America/Chicago', FALLBACK_ISO)).toBeNull();
+    expect(parseAirNowCurrent({}, 'America/Chicago', FALLBACK_ISO)).toBeNull();
+    expect(parseAirNowCurrent([obsNew('OZONE', null)], 'America/Chicago', FALLBACK_ISO)).toBeNull();
+    expect(parseAirNowCurrent([obsOld('O3', -1)], 'America/Chicago', FALLBACK_ISO)).toBeNull();
+  });
 });
 
 describe('AirNow forecast', () => {
@@ -303,6 +330,57 @@ describe('AirNow requests', () => {
     vi.stubGlobal('fetch', mockFetch(null, { airnow: serverError(500) }).fetch);
     const r2 = await loadAirNow(args);
     expect(JSON.stringify(r2)).not.toContain(args.key);
+  });
+
+  it('keeps the key out of the problem when the browser\'s own network error names the whole URL', async () => {
+    // Chromium says "Failed to fetch"; some runtimes put the URL (query string and all) in the message.
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      seen.push(String(input));
+      return Promise.reject(new TypeError(`Failed to fetch ${String(input)}`));
+    });
+    const result = await loadAirNow(args);
+    expect(seen).toHaveLength(4); // two services, two tries each: nothing but the failures to report
+    expect(seen.every((u) => u.includes(args.key))).toBe(true); // the key really was in those URLs
+    expect(result.problem).toBe("Couldn't reach AirNow.");
+    expect(JSON.stringify(result)).not.toContain(args.key);
+    expect(JSON.stringify(result)).not.toContain('API_KEY');
+  });
+
+  it('removes the key from AirNow\'s own error text, even when it is not UUID-shaped, percent-encoded, or cut by the length limit', async () => {
+    const key = 'zzNotAUuid0123456789abcdefABCDEF1234';
+    const run = async (message: string) => {
+      vi.stubGlobal('fetch', mockFetch(null, { airnow: { status: 200, body: { WebServiceError: [{ Message: message }] } } }).fetch);
+      return loadAirNow({ ...args, key });
+    };
+
+    const echoed = await run(`Limit used up for ${key} (${encodeURIComponent(key)}) and ${key}`);
+    expect(echoed.problem).toBe('AirNow: Limit used up for … (…) and …');
+
+    // A message long enough to be shortened, with the key straddling the cut: no piece of it may remain.
+    const straddling = await run(`${'word '.repeat(24)}${key} and more`);
+    expect(straddling.problem?.startsWith('AirNow: word word')).toBe(true);
+    expect(straddling.problem).not.toContain(key.slice(0, 6));
+    expect(straddling.problem?.endsWith('…')).toBe(true);
+
+    // A key shorter than four characters is too ambiguous to search for; the text is left as it is.
+    const tiny = await run('Limit hit for ab');
+    expect(tiny.problem).toBe('AirNow: Limit hit for ab');
+  });
+
+  it('describes a rate limit (HTTP 429) as a limit, not as a retired service or a bad key', async () => {
+    vi.stubGlobal('fetch', mockFetch(null, { airnow: { status: 429, body: 'Too Many Requests' } }).fetch);
+    const result = await loadAirNow(args);
+    expect(result.problem).toBe('AirNow is limiting requests right now (HTTP 429). Official readings return when the limit resets.');
+    expect(result.current).toBeNull();
+  });
+
+  it('says so when AirNow answers in a form it does not know, and only for the current reading', async () => {
+    vi.stubGlobal('fetch', mockFetch(null, { airnow: { status: 200, body: { data: [{ aqiNow: 12 }] } } }).fetch);
+    const result = await loadAirNow(args);
+    expect(result.current).toBeNull();
+    expect(result.forecast).toEqual([]); // the forecast is a bonus: quiet
+    expect(result.problem).toBe('AirNow: The answer was in a format this app does not recognize.');
   });
 
   it('returns empty results without a problem when AirNow knows no monitor nearby (empty arrays are not an error)', async () => {

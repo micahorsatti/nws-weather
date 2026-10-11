@@ -79,7 +79,7 @@ describe('loading', () => {
 
 describe('errors', () => {
   const cases: [WeatherErrorKind, RegExp][] = [
-    ['out-of-coverage', /NWS forecasts cover the United States and its territories — try a US location\./],
+    ['out-of-coverage', /doesn.t publish a forecast for this place\. It covers the United States and most of its territories — try another location\./],
     ['network', /Check your internet connection/],
     ['nws-unavailable', /isn.t responding/],
     ['unknown', /couldn.t be loaded/],

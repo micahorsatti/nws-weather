@@ -1,5 +1,5 @@
 /** Sunrise/sunset computed on the device with suncalc, always for the *location's* calendar day. */
-import { getPosition, getTimes } from 'suncalc';
+import { getTimes } from 'suncalc';
 import type { SunTimes } from './types';
 import { MINUTE_MS, DAY_MS, isoZ, tzOffsetMs, zonedWallToMs } from './time';
 
@@ -40,7 +40,16 @@ export function sunTimesForDate(date: string, tz: string, lat: number, lon: numb
   };
 }
 
-/** True when the sun is above the horizon (standard sunrise/sunset altitude) at an instant and place. */
+/**
+ * True between sunrise and sunset at an instant and place: exactly the boundaries sunTimesForDate reports, so
+ * a sun/moon icon flips when the Sunrise and Sunset times say it does. (Comparing getPosition's altitude with
+ * the -0.833° sunrise angle does not do that: suncalc 2 already applies refraction to the altitude, so it
+ * flipped a few minutes early at sunrise and late at sunset, up to ~6 minutes at Arctic latitudes.)
+ */
 export function isDaytimeAt(ms: number, lat: number, lon: number): boolean {
-  return getPosition(new Date(ms), lat, lon).altitude > -0.833;
+  const t = getTimes(new Date(ms), lat, lon);
+  const rise = t.sunrise instanceof Date ? t.sunrise.getTime() : NaN;
+  const set = t.sunset instanceof Date ? t.sunset.getTime() : NaN;
+  if (Number.isFinite(rise) && Number.isFinite(set)) return ms >= rise && ms < set;
+  return t.alwaysUp === true; // polar day / polar night: the sun never crosses the horizon
 }

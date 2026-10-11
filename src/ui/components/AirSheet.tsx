@@ -15,6 +15,23 @@ const ROWS: { cat: AqiCategory; range: string }[] = [
   { cat: 'hazardous', range: '301+' },
 ];
 
+/**
+ * Who the numbers come from. With an AirNow key the current reading is official, but AirNow forecasts only a few
+ * days (and its forecast service can fail on its own), so the forecast list may be partly or wholly Open-Meteo's
+ * model: say so rather than calling every forecast official.
+ */
+export function attribution(air: AirQualityNow | null, forecast: readonly AirQualityDay[]): string {
+  if (air?.source !== 'airnow') {
+    return 'This is a computer-model estimate from Open-Meteo (Copernicus CAMS), not an official reading. Add a free AirNow key in Settings for official EPA readings.';
+  }
+  const model = forecast.filter((d) => d.source !== 'airnow').length;
+  if (model === 0) return 'Official readings and forecasts come from the EPA’s AirNow program.';
+  if (model === forecast.length) {
+    return 'The current reading is official data from the EPA’s AirNow program. The forecast days are computer-model estimates from Open-Meteo (Copernicus CAMS).';
+  }
+  return 'The current reading and the days AirNow forecasts are official EPA data. The remaining forecast days are computer-model estimates from Open-Meteo (Copernicus CAMS).';
+}
+
 export interface AirSheetProps {
   air: AirQualityNow | null;
   aqi: number | null;
@@ -86,11 +103,7 @@ export function AirSheet({ air, aqi, days, todayKey, onClose }: AirSheetProps) {
         </>
       ) : null}
 
-      <p className="muted sheet__foot">
-        {air?.source === 'airnow'
-          ? 'Official readings and forecasts come from the EPA’s AirNow program.'
-          : 'This is a computer-model estimate from Open-Meteo (Copernicus CAMS), not an official reading. Add a free AirNow key in Settings for official EPA readings.'}
-      </p>
+      <p className="muted sheet__foot">{attribution(air, upcoming)}</p>
     </Sheet>
   );
 }

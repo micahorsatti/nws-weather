@@ -103,6 +103,65 @@ describe('Back closes the top dialog instead of the app', () => {
     expect(back).not.toHaveBeenCalled();
   });
 
+  it('steps off a dialog entry it lands on while no dialog is open (Forward after closing), so Back still leaves the app', () => {
+    // History: [page, dialog]. The dialog closed (✕), then the user pressed Forward onto its stale entry.
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { nwsDialog: true } }));
+    expect(back).toHaveBeenCalledTimes(1);
+    flush(); // our own step back answers with a popstate: it must be ignored...
+    expect(back).toHaveBeenCalledTimes(1);
+    // ...and must not have left the counter off by one: the next dialog still closes on the first real Back.
+    render(<Host />);
+    flush();
+    pressBack();
+    expect(screen.getByTestId('closes').textContent).toBe('1');
+    expect(screen.getByText('Open')).toBeTruthy();
+  });
+
+  it('a popstate onto a dialog entry while a dialog is open still just closes that dialog (no extra step back)', () => {
+    render(<Host />);
+    flush();
+    act(() => void window.dispatchEvent(new PopStateEvent('popstate', { state: { nwsDialog: true } }))); // e.g. Back from a second dialog
+    expect(screen.getByTestId('closes').textContent).toBe('1');
+    flush();
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('ignores an ordinary popstate (a hash change from the skip link) when no dialog is open', () => {
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { something: 'else' } }));
+    flush();
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('lets an inner layer take a Back first (a popup inside the dialog): the dialog stays, and the next Back closes it', () => {
+    let popupOpen = true;
+    function PopupDialog({ onClose }: { onClose: () => void }) {
+      useBackToClose(onClose, () => {
+        const was = popupOpen;
+        popupOpen = false;
+        return was;
+      });
+      return <span>dialog</span>;
+    }
+    function PopupHost() {
+      const [open, setOpen] = useState(true);
+      return open ? <PopupDialog onClose={() => setOpen(false)} /> : <span>closed</span>;
+    }
+    render(<PopupHost />);
+    flush();
+    expect(push).toHaveBeenCalledTimes(1);
+
+    pressBack(); // the popup takes it
+    expect(screen.getByText('dialog')).toBeTruthy();
+    expect(push).toHaveBeenCalledTimes(2); // Back used up the dialog's entry, so it was added again
+
+    pressBack(); // nothing inner left: the dialog closes
+    expect(screen.getByText('closed')).toBeTruthy();
+    flush();
+    expect(push).toHaveBeenCalledTimes(2);
+    expect(back).not.toHaveBeenCalled(); // closed by Back: no extra step back
+  });
+
   it('only the top dialog closes when two are open', () => {
     function Two() {
       const [a, setA] = useState(true);

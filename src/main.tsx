@@ -15,6 +15,22 @@ initTheme(settingsStore.get().theme);
 // Ask the browser not to evict our cached forecasts under storage pressure.
 void navigator.storage?.persist?.().catch(() => {});
 
+// A deploy's new service worker takes over open pages (registerType 'autoUpdate'), and the old build's
+// lazy chunks (the radar) are gone from the server and the cache. Move onto the new build, but only
+// while the page is hidden, so it never reloads under the user's finger.
+const sw = navigator.serviceWorker;
+if (sw) {
+  let hadController = sw.controller !== null;
+  sw.addEventListener('controllerchange', () => {
+    if (!hadController) {
+      hadController = true; // first install: this page already runs the current build
+      return;
+    }
+    if (document.visibilityState === 'hidden') window.location.reload();
+    else document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && window.location.reload());
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

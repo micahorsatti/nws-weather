@@ -99,6 +99,32 @@ function json(r: FixtureResponse): Response {
   return new Response(JSON.stringify(r.body), { status: r.status, headers: { 'content-type': 'application/json' } });
 }
 
+/**
+ * What api.weather.gov answers for a point in American Samoa (recorded 2026-10-09, trimmed): the place is known, but
+ * there is no forecast grid, so every grid and forecast field is null. NWS publishes only zone text forecasts there.
+ */
+export const AMERICAN_SAMOA_POINT: FixtureResponse = {
+  status: 200,
+  body: {
+    properties: {
+      cwa: 'PPG',
+      forecastOffice: 'https://api.weather.gov/offices/PPG',
+      gridId: null,
+      gridX: null,
+      gridY: null,
+      forecast: null,
+      forecastHourly: null,
+      forecastGridData: null,
+      observationStations: null,
+      relativeLocation: { properties: { city: 'Pago Pago', state: 'AS' } },
+      forecastZone: 'https://api.weather.gov/zones/forecast/ASZ001',
+      county: 'https://api.weather.gov/zones/county/ASC010',
+      timeZone: 'Pacific/Pago_Pago',
+      radarStation: null,
+    },
+  },
+};
+
 /** A NWS-style 5xx problem document. */
 export const serverError = (status = 503): FixtureResponse => ({
   status,

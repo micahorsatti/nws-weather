@@ -9,6 +9,7 @@
  */
 export * from './types';
 
+export { CACHE_NAMESPACE, clearAllCaches } from './cache';
 export { loadWeather } from './assemble';
 export type { LoadOptions } from './assemble';
 export { useWeather } from './useWeather';

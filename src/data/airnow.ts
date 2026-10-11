@@ -84,6 +84,12 @@ function field(o: Record<string, unknown>, ...names: string[]): unknown {
   return undefined;
 }
 
+/** Whether `o` has any of `names` as a key (compared case-insensitively), even when its value is null. */
+function hasField(o: Record<string, unknown>, ...names: string[]): boolean {
+  const want = names.map((n) => n.toLowerCase());
+  return Object.keys(o).some((k) => want.includes(k.toLowerCase()));
+}
+
 /** A finite number, also from a numeric string ("42"). */
 function num(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
@@ -132,8 +138,16 @@ function serviceMessage(errs: unknown): string {
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '…')
     .replace(/\s+/g, ' ')
     .trim();
-  return joined.length > 140 ? `${joined.slice(0, 139)}…` : joined;
+  if (joined.length <= 140) return joined;
+  // Cut between words: a key is one long token, so it is either kept whole (for withoutKey() to remove) or dropped,
+  // never shown half.
+  const head = joined.slice(0, 139);
+  const whole = /\s/.test(joined.charAt(139)) ? head : head.replace(/\S+$/, '');
+  return `${whole.trimEnd() || 'AirNow reported an error'}…`;
 }
+
+/** A message about request volume ("Hourly request limit reached for this API key"), which is not a bad key. */
+const ABOUT_LIMITS = /\b(?:limits?|limited|exceed\w*|too many|quota|throttl\w*|rate[ -]limit\w*)\b/;
 
 /** AirNow error bodies look like {"WebServiceError":[{"Message":"Invalid API key"}]} (sometimes inside an array). */
 function throwIfServiceError(json: unknown): void {
@@ -141,7 +155,10 @@ function throwIfServiceError(json: unknown): void {
   const errs = first ? field(first, 'WebServiceError') : undefined;
   if (errs === undefined) return;
   const text = JSON.stringify(errs).toLowerCase();
-  if (text.includes('key') || text.includes('unauthorized') || text.includes('authenticat')) throw new AirNowKeyError();
+  // A valid key that hit its hourly limit must not be reported as a rejected key (the user would replace a good one).
+  if (!ABOUT_LIMITS.test(text) && (text.includes('key') || text.includes('unauthorized') || text.includes('authenticat'))) {
+    throw new AirNowKeyError();
+  }
   throw new AirNowServiceError(serviceMessage(errs));
 }
 
@@ -169,13 +186,21 @@ function observedAtIso(
 export function parseAirNowCurrent(json: unknown, fallbackTz: string, fallbackIso: string): AirQualityNow | null {
   throwIfServiceError(json);
   let worst: { aqi: number; entry: Record<string, unknown> } | null = null;
+  let recognised = false;
   for (const raw of arr(json)) {
     const entry = obj(raw);
+    if (entry && hasField(entry, 'nowcastAQI', 'AQI')) recognised = true;
     const aqi = entry ? num(field(entry, 'nowcastAQI', 'AQI')) : null;
     if (!entry || aqi === null || aqi < 0) continue;
     if (worst === null || aqi > worst.aqi) worst = { aqi, entry };
   }
-  if (!worst) return null;
+  if (!worst) {
+    // An empty answer means no monitor nearby, and records whose AQI is unknown are normal. An answer with content
+    // but no AQI field at all is a format this code doesn't know (the service changed again): say so, don't hide it.
+    const hasContent = arr(json).length > 0 || Object.keys(obj(json) ?? {}).length > 0;
+    if (hasContent && !recognised) throw new AirNowServiceError('The answer was in a format this app does not recognize.');
+    return null;
+  }
   const e = worst.entry;
   return {
     source: 'airnow',
@@ -276,7 +301,22 @@ export function describeAirNowFailure(err: unknown): string {
   if (err instanceof HttpError && err.status === 410) {
     return 'AirNow has retired the service this app uses (HTTP 410), so the app needs an update.';
   }
+  if (err instanceof HttpError && err.status === 429) {
+    return 'AirNow is limiting requests right now (HTTP 429). Official readings return when the limit resets.';
+  }
   return describeFailure(err, 'AirNow');
+}
+
+/**
+ * `text` with every trace of the key removed, in the raw and the percent-encoded spelling: AirNow's own error
+ * text is passed through to the user, and nothing it says may carry the key, whatever shape the key has.
+ */
+function withoutKey(text: string, key: string): string {
+  let out = text;
+  for (const form of new Set([key, encodeURIComponent(key)])) {
+    if (form.length >= 4) out = out.split(form).join('…');
+  }
+  return out;
 }
 
 /**
@@ -308,6 +348,6 @@ export async function loadAirNow(args: {
   return {
     current: currentR.status === 'fulfilled' ? currentR.value : null,
     forecast: forecastR.status === 'fulfilled' ? forecastR.value.filter((d) => d.date >= today) : [],
-    problem: currentR.status === 'rejected' ? describeAirNowFailure(currentR.reason) : null,
+    problem: currentR.status === 'rejected' ? withoutKey(describeAirNowFailure(currentR.reason), key) : null,
   };
 }

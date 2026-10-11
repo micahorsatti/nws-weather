@@ -31,6 +31,11 @@ export function parsePoint(json: unknown): NwsPoint {
   const gridX = finite(props.gridX);
   const gridY = finite(props.gridY);
   const timeZone = str(props.timeZone);
+  // American Samoa: NWS knows the place (zones, time zone, text forecasts) but publishes no digital forecast
+  // for it, so /points answers with a null grid and null forecast URLs. That is permanent, not an outage.
+  if (!wfo && gridX === null && gridY === null && timeZone && str(props.forecast) === null && str(props.forecastGridData) === null) {
+    throw new WeatherLoadError('out-of-coverage', 'The National Weather Service publishes no digital forecast for this location.');
+  }
   if (!wfo || gridX === null || gridY === null || !timeZone) {
     throw new BadResponseError('NWS point response was missing grid or time zone information');
   }

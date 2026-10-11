@@ -10,8 +10,13 @@ import type { WeatherBundle } from './types';
 import type { NwsPoint } from './nws/points';
 import { finite, haversineKm, obj } from './util';
 
-export const BUNDLE_PREFIX = 'nws-weather:bundle:v1:';
-export const POINT_PREFIX = 'nws-weather:point:v1:';
+/**
+ * Every localStorage key this layer writes starts with this. GitHub Pages serves all of an account's project
+ * sites from one origin, so storage is shared with other sites: only keys under this namespace are ours to remove.
+ */
+export const CACHE_NAMESPACE = 'nws-weather:';
+export const BUNDLE_PREFIX = `${CACHE_NAMESPACE}bundle:v1:`;
+export const POINT_PREFIX = `${CACHE_NAMESPACE}point:v1:`;
 /** Keep at most this many places' bundles (oldest evicted first). */
 export const MAX_CACHED_BUNDLES = 6;
 /** Point metadata is tiny; still bound it so browsing places can't grow storage forever. */

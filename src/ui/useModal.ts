@@ -66,6 +66,8 @@ function restoreFocus(opener: HTMLElement | null): void {
 // history.back(); with no entry of our own it would leave the app from inside a sheet.
 interface BackEntry {
   close: () => void;
+  /** Gives an inner layer (a popup inside the dialog) the first chance to take the Back; true = it did. */
+  intercept: () => boolean;
   closedByBack: boolean;
 }
 const backStack: BackEntry[] = [];
@@ -73,42 +75,71 @@ const backStack: BackEntry[] = [];
 let ownPops = 0;
 let backListening = false;
 
+/** history.state of the entries this module pushes. */
+const isDialogEntry = (state: unknown): boolean =>
+  typeof state === 'object' && state !== null && (state as { nwsDialog?: unknown }).nwsDialog === true;
+
 function ensureBackListener(): void {
   if (backListening || typeof window === 'undefined') return;
   backListening = true;
-  window.addEventListener('popstate', () => {
+  window.addEventListener('popstate', (event) => {
     if (ownPops > 0) {
       ownPops -= 1;
       return;
     }
     const top = backStack.pop();
     if (top) {
+      if (top.intercept()) {
+        // An inner layer (say, a popup inside the radar) took this Back and the dialog stays open: Back consumed
+        // the dialog's history entry, so add it again, and the next Back closes the dialog.
+        window.history.pushState({ nwsDialog: true }, '');
+        backStack.push(top);
+        return;
+      }
       top.closedByBack = true;
       top.close();
+      return;
+    }
+    // No dialog is open, yet we landed on a dialog's entry: Forward (or a history jump) onto the entry a dialog
+    // left behind when it closed. There is nothing to show there, so step off it; otherwise the next Back would
+    // appear to do nothing instead of leaving the app.
+    if (isDialogEntry(event.state)) {
+      ownPops += 1;
+      window.history.back();
     }
   });
-  // A reload while a dialog was open leaves us on its stale entry: step back so one Back leaves the app.
-  const state: unknown = window.history.state;
-  if (typeof state === 'object' && state !== null && (state as { nwsDialog?: unknown }).nwsDialog === true) {
+  // A reload (or a restored tab) while a dialog was open leaves us on its stale entry: step back so one Back leaves the app.
+  if (isDialogEntry(window.history.state)) {
     ownPops += 1;
     window.history.back();
   }
 }
+// At import, so the stale-entry check above runs when the app starts, not when the first dialog opens.
+ensureBackListener();
 
 /**
  * Back (Android's edge swipe, the browser button) closes the dialog instead of the app: each open dialog
  * adds one history entry and Back consumes it. Closing any other way (✕, Escape, the scrim) removes the
  * entry again, so on the main screen Back still leaves the app.
+ *
+ * `intercept` lets something inside the dialog (a popup that Escape also dismisses first) take a Back before the
+ * dialog does: return true when it did, and the dialog stays open for one more Back.
  */
-export function useBackToClose(onClose: () => void): void {
+export function useBackToClose(onClose: () => void, intercept?: () => boolean): void {
   const closeRef = useRef(onClose);
+  const interceptRef = useRef(intercept);
   useEffect(() => {
     closeRef.current = onClose;
+    interceptRef.current = intercept;
   });
 
   useEffect(() => {
     ensureBackListener();
-    const entry: BackEntry = { close: () => closeRef.current(), closedByBack: false };
+    const entry: BackEntry = {
+      close: () => closeRef.current(),
+      intercept: () => interceptRef.current?.() ?? false,
+      closedByBack: false,
+    };
     let pushed = false;
     // Deferred a tick so React StrictMode's mount-unmount-mount in development adds only one entry.
     const timer = window.setTimeout(() => {

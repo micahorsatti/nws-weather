@@ -57,7 +57,7 @@
   --surface-3: #e4eaf3;
   --ink: #0e1a2b;
   --ink-2: #44546a;
-  --ink-3: #5c6b82;
+  --ink-3: #56657c; /* 4.5:1 or better on every light surface, including the inactive segment (#e4eaf3) */
   --line: rgba(14, 26, 43, 0.09);
   --line-strong: rgba(14, 26, 43, 0.2);
   --accent: #1565c0;
@@ -115,7 +115,7 @@
   --surface-3: #283858;
   --ink: #eef3fb;
   --ink-2: #b9c5d8;
-  --ink-3: #93a1b8;
+  --ink-3: #97a5bc;
   --line: rgba(255, 255, 255, 0.09);
   --line-strong: rgba(255, 255, 255, 0.2);
   --accent: #7db4ff;
@@ -171,7 +171,7 @@
     --surface-3: #283858;
     --ink: #eef3fb;
     --ink-2: #b9c5d8;
-    --ink-3: #93a1b8;
+    --ink-3: #97a5bc;
     --line: rgba(255, 255, 255, 0.09);
     --line-strong: rgba(255, 255, 255, 0.2);
     --accent: #7db4ff;

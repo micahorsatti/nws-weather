@@ -6,7 +6,7 @@ const COPY: Record<WeatherErrorKind, { icon: WxIconProps['icon']; title: string;
   'out-of-coverage': {
     icon: 'unknown',
     title: 'That place is outside the forecast area',
-    body: 'NWS forecasts cover the United States and its territories — try a US location.',
+    body: 'The National Weather Service doesn’t publish a forecast for this place. It covers the United States and most of its territories — try another location.',
   },
   network: {
     icon: 'wind',

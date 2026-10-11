@@ -586,7 +586,8 @@
 }
 
 .hero__feels-label {
-  font-weight: 500;
+  /* Bold at 20px is WCAG "large text" (3:1): white on the lightened pill over a daytime sky is only 3.5-4.5:1 */
+  font-weight: 700;
 }
 
 .hero__feels-value {

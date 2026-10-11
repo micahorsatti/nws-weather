@@ -29,10 +29,12 @@ export interface AlertsSheetProps {
   alerts: WeatherAlert[];
   now: number;
   tz: string;
+  /** weather.gov's forecast page for the place, which lists its active alerts (alert.url is API JSON). */
+  pageUrl: string | null;
   onClose: () => void;
 }
 
-export function AlertsSheet({ alerts, now, tz, onClose }: AlertsSheetProps) {
+export function AlertsSheet({ alerts, now, tz, pageUrl, onClose }: AlertsSheetProps) {
   return (
     <Sheet title={alerts.length === 1 ? 'Weather alert' : `Weather alerts (${alerts.length})`} onClose={onClose}>
       <ul className="alert-list" role="list">
@@ -40,7 +42,6 @@ export function AlertsSheet({ alerts, now, tz, onClose }: AlertsSheetProps) {
           const effective = when(a.effective ?? a.onset, tz);
           const expires = when(a.ends ?? a.expires, tz);
           const until = untilText(a, now, tz);
-          const safeUrl = a.url && /^https:\/\//i.test(a.url) ? a.url : null;
           return (
             <li key={a.id} className="alert-item" data-testid="alert-item">
               <div className={`alert-item__head ${SEVERITY_CLASS[a.severity]}`}>
@@ -93,15 +94,15 @@ export function AlertsSheet({ alerts, now, tz, onClose }: AlertsSheetProps) {
                   <Paragraphs text={a.instruction} />
                 </div>
               ) : null}
-              {safeUrl ? (
-                <a className="ext-link" href={safeUrl} target="_blank" rel="noopener noreferrer">
-                  Official alert details <IconExternal size={16} />
-                </a>
-              ) : null}
             </li>
           );
         })}
       </ul>
+      {pageUrl ? (
+        <a className="ext-link" href={pageUrl} target="_blank" rel="noopener noreferrer">
+          Alerts and forecast for this place on weather.gov <IconExternal size={16} />
+        </a>
+      ) : null}
     </Sheet>
   );
 }

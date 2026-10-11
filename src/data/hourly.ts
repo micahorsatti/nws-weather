@@ -6,7 +6,7 @@
 import { feelsLike, humidityFromDewpoint } from './feelsLike';
 import type { HourlyGrid } from './nws/grid';
 import type { NwsHourlyPeriod } from './nws/forecast';
-import { describeIcon } from './icons';
+import { describeIcon, matchSkyWording } from './icons';
 import { HOUR_MS, floorToHour, isoZ, localDateOf, parseTime, startOfLocalDay } from './time';
 import { isDaytimeAt } from './sun';
 import type { ForecastPeriod, HourlyPoint, WxIcon } from './types';
@@ -124,15 +124,15 @@ export function buildHourlySeries(i: HourlyInputs): HourlyPoint[] {
     const thunderChancePct = g('probabilityOfThunder');
 
     // Conditions: hourly feed first, then the 12-hour period covering the hour, then derived from numbers.
-    const daylight = isDaytimeAt(h + HOUR_MS / 2, i.lat, i.lon);
+    // Day or night is where the sun is for most of the hour, the same rule the "now" reading uses, not the
+    // feed's 6 AM - 6 PM convention (which shows a sun icon in the dark before a 7:30 sunrise).
+    const isDaytime = isDaytimeAt(h + HOUR_MS / 2, i.lat, i.lon);
     const span = spans.find((s) => h >= s.start && h < s.end);
     let icon: WxIcon = 'unknown';
     let shortForecast = '';
-    let isDaytime = daylight;
     if (f) {
       icon = f.icon;
       shortForecast = f.shortForecast;
-      isDaytime = f.isDaytime;
     }
     if (icon === 'unknown' && span) {
       icon = span.period.icon;
@@ -141,7 +141,8 @@ export function buildHourlySeries(i: HourlyInputs): HourlyPoint[] {
     if (icon === 'unknown') {
       icon = iconFromGridValues({ skyCoverPct, precipChancePct, thunderChancePct, precipMm, snowMm, tempC });
     }
-    if (shortForecast === '' && icon !== 'unknown') shortForecast = describeIcon(icon, isDaytime);
+    if (shortForecast !== '') shortForecast = matchSkyWording(shortForecast, isDaytime);
+    else if (icon !== 'unknown') shortForecast = describeIcon(icon, isDaytime);
 
     points.push({
       time: isoZ(h),
